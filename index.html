@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3Dルームアセット配置 - Babylon.js</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Babylon.js CDN -->
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+    <!-- グリッド素材用のライブラリを追加 -->
+    <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+</head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    
+    <div class="controls">
+        <button class="controls-header" id="toggleControlsBtn">
+            <h3>アセット配置</h3>
+            <span class="toggle-icon">−</span>
+        </button>
+        <div class="controls-content">
+        <button id="cubeBtn">バーガーを配置</button>
+        <button id="recordBtn">レコードマシンを配置</button>
+        <button id="juiceBoxBtn">ジュースボックスを配置</button>
+        <button id="mikeDeskBtn">マイクデスクを配置</button>
+
+        <!-- 1人称モード切り替えボタン -->
+        <button id="firstPersonBtn">1人称モード</button>
+
+        <div class="control-group">
+            <label for="gridSizeSelect">グリッドサイズ:</label>
+            <select id="gridSizeSelect">
+                <option value="0">なし</option>
+                <option value="0.5">0.5</option>
+                <option value="1" selected>1.0</option>
+                <option value="2">2.0</option>
+            </select>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="showGridCheck" checked>
+            <label for="showGridCheck">グリッド表示</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="snapToGridCheck" checked>
+            <label for="snapToGridCheck">グリッドにスナップ</label>
+        </div>
+
+        <!-- ズーム調整セクション -->
+        <div class="control-group">
+            <label for="zoomSlider">ズームレベル:</label>
+            <input type="range" id="zoomSlider" min="0.5" max="2.0" step="0.1" value="1.0">
+            <div class="zoom-buttons">
+                <button id="zoomInBtn">+</button>
+                <button id="zoomOutBtn">-</button>
+                <button id="resetZoomBtn">リセット</button>
+            </div>
+        </div>
+
+        <!-- ライティング調整セクション -->
+        <div class="control-group">
+            <label for="lightingHeader">ライティング設定:</label>
+            <div class="lighting-controls">
+                <div class="lighting-slider">
+                    <label for="ambientIntensity">環境光強度:</label>
+                    <input type="range" id="ambientIntensity" min="0" max="1" step="0.1" value="0.8">
+                </div>
+                <div class="lighting-slider">
+                    <label for="directionalIntensity">方向光強度:</label>
+                    <input type="range" id="directionalIntensity" min="0" max="1" step="0.1" value="0.6">
+                </div>
+                <div class="lighting-slider">
+                    <label for="pointLightIntensity">ポイント光強度:</label>
+                    <input type="range" id="pointLightIntensity" min="0" max="1" step="0.1" value="0.4">
+                </div>
+                <div class="lighting-slider">
+                    <label for="shadowDarkness">影の濃さ:</label>
+                    <input type="range" id="shadowDarkness" min="0" max="1" step="0.1" value="0.2">
+                </div>
+                <div class="lighting-slider">
+                    <label for="ambientColor">環境光色:</label>
+                    <input type="color" id="ambientColor" value="#b3ccff">
+                </div>
+                <div class="lighting-slider">
+                    <label for="pointLight1Color">ポイント光1色:</label>
+                    <input type="color" id="pointLight1Color" value="#3366cc">
+                </div>
+                <div class="lighting-slider">
+                    <label for="pointLight2Color">ポイント光2色:</label>
+                    <input type="color" id="pointLight2Color" value="#cc3380">
+                </div>
+                
+                <!-- 光源位置調整セクション -->
+                <div class="lighting-header">光源位置:</div>
+                <div class="lighting-slider">
+                    <label for="dirLightX">方向光X位置:</label>
+                    <input type="range" id="dirLightX" min="-30" max="30" step="1" value="-20">
+                </div>
+                <div class="lighting-slider">
+                    <label for="dirLightY">方向光Y位置:</label>
+                    <input type="range" id="dirLightY" min="10" max="50" step="1" value="40">
+                </div>
+                <div class="lighting-slider">
+                    <label for="dirLightZ">方向光Z位置:</label>
+                    <input type="range" id="dirLightZ" min="-30" max="30" step="1" value="-20">
+                </div>
+                
+                <!-- 方向光の方向設定 - 固定値表示 -->
+                <div class="lighting-header">光源方向:</div>
+                <div class="lighting-info">
+                    X: -0.329, Y: -0.768, Z: -0.549
+                </div>
+                <div class="lighting-slider">
+                    <label for="pointLight1X">ポイント光1 X位置:</label>
+                    <input type="range" id="pointLight1X" min="-20" max="20" step="1" value="5">
+                </div>
+                <div class="lighting-slider">
+                    <label for="pointLight1Y">ポイント光1 Y位置:</label>
+                    <input type="range" id="pointLight1Y" min="1" max="15" step="1" value="8">
+                </div>
+                <div class="lighting-slider">
+                    <label for="pointLight1Z">ポイント光1 Z位置:</label>
+                    <input type="range" id="pointLight1Z" min="-20" max="20" step="1" value="5">
+                </div>
+                <div class="lighting-slider">
+                    <label for="pointLight2X">ポイント光2 X位置:</label>
+                    <input type="range" id="pointLight2X" min="-20" max="20" step="1" value="-5">
+                </div>
+                <div class="lighting-slider">
+                    <label for="pointLight2Y">ポイント光2 Y位置:</label>
+                    <input type="range" id="pointLight2Y" min="1" max="15" step="1" value="8">
+                </div>
+                <div class="lighting-slider">
+                    <label for="pointLight2Z">ポイント光2 Z位置:</label>
+                    <input type="range" id="pointLight2Z" min="-20" max="20" step="1" value="-5">
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="reduceShininess" checked>
+                    <label for="reduceShininess">メタリック効果を抑える</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <button id="rotateBtn">選択したオブジェクトを90度回転</button>
+            <button id="deleteBtn">選択したオブジェクトを削除</button>
+        </div>
+        
+        <!-- デバッグ用カメラ調整パネル -->
+        <div class="debug-panel">
+            <h4>カメラ位置調整（デバッグ用）</h4>
+            <div class="camera-controls">
+                <div class="camera-slider">
+                    <label for="cameraAlpha">Alpha（水平角度）:</label>
+                    <input type="range" id="cameraAlpha" min="-3.14" max="3.14" step="0.1" value="-0.78">
+                </div>
+                <div class="camera-slider">
+                    <label for="cameraBeta">Beta（垂直角度）:</label>
+                    <input type="range" id="cameraBeta" min="0.1" max="1.57" step="0.1" value="0.78">
+                </div>
+                <div class="camera-slider">
+                    <label for="cameraRadius">Radius（距離）:</label>
+                    <input type="range" id="cameraRadius" min="3" max="20" step="0.5" value="20">
+                </div>
+                <div class="camera-slider">
+                    <label for="cameraTargetX">Target X:</label>
+                    <input type="range" id="cameraTargetX" min="-10" max="10" step="0.5" value="0">
+                </div>
+                <div class="camera-slider">
+                    <label for="cameraTargetY">Target Y:</label>
+                    <input type="range" id="cameraTargetY" min="-10" max="10" step="0.5" value="1">
+                </div>
+                <div class="camera-slider">
+                    <label for="cameraTargetZ">Target Z:</label>
+                    <input type="range" id="cameraTargetZ" min="-10" max="10" step="0.5" value="0">
+                </div>
+                <div class="camera-info">
+                    <div id="cameraInfoDisplay">カメラ情報がここに表示されます</div>
+                </div>
+                <button id="resetCameraBtn">カメラをリセット</button>
+                <button id="logCameraBtn">カメラ設定をログ出力</button>
+            </div>
+        </div>
+        </div>
+    </div>
+    
+    <!-- 画像書き出しボタン -->
+    <div class="export-controls">
+        <button id="exportImageBtn">画像を書き出し</button>
+    </div>
+
+    <div class="help-panel">
+        <h3>操作方法</h3>
+        <ul>
+            <li>配置ボタンを押して、床の上でクリックすると配置できます</li>
+            <li>オブジェクトをクリックして選択、ドラッグで移動できます</li>
+            <li>選択したオブジェクトは回転ボタンで90度ずつ回転できます</li>
+            <li>オブジェクトは床や壁に自動的にスナップします</li>
+            <li>グリッドにスナップすると正確な位置に配置できます</li>
+            <li>ズームスライダーまたはマウスホイールを使って表示を拡大/縮小できます</li>
+            <li><strong>1人称モード</strong>でWASDキーによる移動が可能</li>
+        </ul>
+        <button id="helpCloseBtn">閉じる</button>
+    </div>
+    
+    <button id="helpBtn">?</button>
+
+    <!-- エラー表示用の要素 -->
+    <div id="errorPanel" style="display: none; position: absolute; bottom: 10px; left: 10px; background-color: rgba(255, 0, 0, 0.7); color: white; padding: 10px; border-radius: 5px; z-index: 100;"></div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
