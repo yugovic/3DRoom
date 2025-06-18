@@ -235,12 +235,12 @@ export class LightingSystem {
      */
     isUserPlacedObject(mesh) {
         return mesh.name.startsWith("cube_") || 
-               mesh.name.startsWith("record_") ||
+               mesh.name.startsWith("recordMachine_") ||
                mesh.name.startsWith("juiceBox_") || 
                mesh.name.startsWith("mikeDesk_") ||
                mesh.name.startsWith("burger_") ||
                (mesh.parent && (
-                   mesh.parent.name.startsWith("record_") || 
+                   mesh.parent.name.startsWith("recordMachine_") || 
                    mesh.parent.name.startsWith("juiceBox_") ||
                    mesh.parent.name.startsWith("burger_") ||
                    mesh.parent.name.startsWith("mikeDesk_")

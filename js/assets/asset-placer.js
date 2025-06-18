@@ -44,8 +44,8 @@ export class AssetPlacer {
                 case ASSET_TYPES.CUBE:
                     mesh = this.placeBurger(position);
                     break;
-                case ASSET_TYPES.RECORD:
-                    mesh = this.placeRecord(position);
+                case ASSET_TYPES.RECORD_MACHINE:
+                    mesh = this.placeRecordMachine(position);
                     break;
                 case ASSET_TYPES.JUICE_BOX:
                     mesh = this.placeJuiceBox(position);
@@ -109,20 +109,20 @@ export class AssetPlacer {
      * @param {BABYLON.Vector3} position - 配置位置
      * @returns {BABYLON.Mesh|null}
      */
-    placeRecord(position) {
-        if (this.assetLoader.isModelAvailable('record')) {
+    placeRecordMachine(position) {
+        if (this.assetLoader.isModelAvailable('recordMachine')) {
             const timestamp = Date.now();
-            const record = this.assetLoader.cloneModel('record', `record_${timestamp}`);
+            const recordMachine = this.assetLoader.cloneModel('recordMachine', `recordMachine_${timestamp}`);
             
-            if (record) {
-                record.position = position.clone();
-                this.applyWallRotation(record);
-                this.setupMeshInteraction(record);
-                this.createBoundingBox(record, timestamp);
-                return record;
+            if (recordMachine) {
+                recordMachine.position = position.clone();
+                this.applyWallRotation(recordMachine);
+                this.setupMeshInteraction(recordMachine);
+                this.createBoundingBox(recordMachine, timestamp);
+                return recordMachine;
             }
         } else {
-            this.loadAndPlaceAsset(ASSET_URLS.RECORD_MACHINE, `record_${Date.now()}`, position);
+            this.loadAndPlaceAsset(ASSET_URLS.RECORD_MACHINE, `recordMachine_${Date.now()}`, position);
         }
         
         return null;

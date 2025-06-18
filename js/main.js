@@ -8,6 +8,9 @@ import { App } from './core/app.js';
 // グローバル変数としてアプリケーションインスタンスを保持（デバッグ用）
 window.app = null;
 
+// パフォーマンス監視のインターバルID
+let performanceMonitorInterval = null;
+
 /**
  * アプリケーションを起動
  */
@@ -105,41 +108,68 @@ function startPerformanceMonitoring(app) {
     `;
     document.body.appendChild(perfDiv);
     
+    // 既存のインターバルをクリア
+    if (performanceMonitorInterval) {
+        clearInterval(performanceMonitorInterval);
+    }
+    
     // 1秒ごとに更新
-    setInterval(() => {
-        const stats = app.getPerformanceStats();
-        if (stats) {
-            perfDiv.innerHTML = `
-                FPS: ${stats.fps.toFixed(1)}<br>
-                Active Meshes: ${stats.activeMeshes}<br>
-                Total Meshes: ${stats.totalMeshes}<br>
-                Vertices: ${stats.totalVertices.toLocaleString()}<br>
-                Draw Calls: ${stats.drawCalls}
-            `;
+    performanceMonitorInterval = setInterval(() => {
+        try {
+            const stats = app.getPerformanceStats();
+            if (stats) {
+                perfDiv.innerHTML = `
+                    FPS: ${stats.fps.toFixed(1)}<br>
+                    Active Meshes: ${stats.activeMeshes}<br>
+                    Total Meshes: ${stats.totalMeshes}<br>
+                    Vertices: ${stats.totalVertices.toLocaleString()}<br>
+                    Draw Calls: ${stats.drawCalls}
+                `;
+            }
+        } catch (error) {
+            console.error("Performance monitoring error:", error);
+            // エラーが発生した場合は監視を停止
+            stopPerformanceMonitoring();
         }
     }, 1000);
+}
+
+/**
+ * パフォーマンス監視を停止
+ */
+function stopPerformanceMonitoring() {
+    if (performanceMonitorInterval) {
+        clearInterval(performanceMonitorInterval);
+        performanceMonitorInterval = null;
+    }
+    
+    const perfDiv = document.getElementById("performanceMonitor");
+    if (perfDiv) {
+        perfDiv.remove();
+    }
 }
 
 /**
  * アプリケーションのクリーンアップ
  */
 function cleanup() {
+    // パフォーマンス監視を停止
+    stopPerformanceMonitoring();
+    
     if (window.app) {
         window.app.dispose();
         window.app = null;
     }
 }
 
-// ページ読み込み完了時にアプリケーションを起動
-window.addEventListener("DOMContentLoaded", startApplication);
-
-// ページ離脱時にクリーンアップ
+// ページアンロード時のクリーンアップ
 window.addEventListener("beforeunload", cleanup);
 
-// エラーハンドリング
+// グローバルエラーハンドリング
 window.addEventListener("error", (event) => {
     console.error("Global error:", event.error);
     
+    // アプリケーションのエラーハンドラーが利用可能な場合は使用
     if (window.app && window.app.getErrorHandler()) {
         window.app.getErrorHandler().handleCriticalError(
             event.error,
@@ -148,42 +178,17 @@ window.addEventListener("error", (event) => {
     }
 });
 
-// 未処理のPromiseエラーをキャッチ
+// 未処理のPromiseエラー
 window.addEventListener("unhandledrejection", (event) => {
     console.error("Unhandled promise rejection:", event.reason);
     
     if (window.app && window.app.getErrorHandler()) {
-        window.app.getErrorHandler().showError(
-            "未処理のエラーが発生しました: " + event.reason
+        window.app.getErrorHandler().handleError(
+            new Error(event.reason),
+            'window.unhandledrejection'
         );
     }
 });
 
-// 開発用のグローバル関数
-if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    // アプリケーション状態を取得
-    window.getAppState = () => {
-        if (window.app) {
-            return window.app.getState();
-        }
-        return null;
-    };
-    
-    // スクリーンショットを撮る
-    window.takeScreenshot = async () => {
-        if (window.app) {
-            const dataUrl = await window.app.takeScreenshot();
-            const link = document.createElement('a');
-            link.href = dataUrl;
-            link.download = `screenshot_${Date.now()}.png`;
-            link.click();
-        }
-    };
-    
-    // アプリケーションをリセット
-    window.resetApp = () => {
-        if (window.app) {
-            window.app.reset();
-        }
-    };
-}
+// DOMContentLoadedで開始
+document.addEventListener("DOMContentLoaded", startApplication);

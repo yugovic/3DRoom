@@ -82,263 +82,111 @@ export class RoomManager {
         const rootMesh = meshes[0];
         
         // スケールを設定
+        const roomScale = MODEL_SCALES.ROOM || MODEL_SCALES.DEFAULT;
         rootMesh.scaling = new BABYLON.Vector3(
-            MODEL_SCALES.ROOM.x,
-            MODEL_SCALES.ROOM.y,
-            MODEL_SCALES.ROOM.z
+            roomScale.x,
+            roomScale.y,
+            roomScale.z
         );
         
-        // モデル全体の位置を調整
-        this.adjustRoomPosition(meshes, rootMesh);
+        // ルートメッシュをroom meshリストに追加
+        this.roomMeshes.push(rootMesh);
         
-        // 各メッシュを分類して処理
-        meshes.forEach(mesh => {
-            this.roomMeshes.push(mesh);
+        // 全メッシュを処理
+        meshes.forEach((mesh, index) => {
+            if (!mesh) return;
             
-            // マテリアルの最適化
-            this.optimizeMeshMaterial(mesh);
+            console.log(`Processing mesh ${index}: ${mesh.name}`);
             
-            // 床メッシュの検出
-            if (this.isFloorMesh(mesh)) {
-                this.setupFloor(mesh);
+            // メッシュの設定
+            mesh.isPickable = true;
+            mesh.receiveShadows = true;
+            
+            // 名前に基づいて床と壁を識別
+            const meshNameLower = mesh.name.toLowerCase();
+            
+            if (meshNameLower.includes('floor') || 
+                meshNameLower.includes('ground') || 
+                meshNameLower.includes('床')) {
+                this.setupFloorMesh(mesh);
+            } else if (meshNameLower.includes('wall') || 
+                       meshNameLower.includes('壁')) {
+                this.setupWallMesh(mesh);
             }
-            // 壁メッシュの検出
-            else if (this.isWallMesh(mesh)) {
-                this.setupWall(mesh);
-            }
-            // その他の装飾メッシュ
-            else if (this.isDecorationMesh(mesh)) {
-                this.setupDecoration(mesh);
+            
+            // 子メッシュも処理
+            if (mesh.getChildMeshes) {
+                mesh.getChildMeshes().forEach(childMesh => {
+                    this.processChildMesh(childMesh);
+                });
             }
         });
         
-        // 部屋の境界を計算
-        this.calculateRoomBoundary();
+        // 影のキャスター/レシーバーを設定
+        this.setupShadows();
     }
 
     /**
-     * 部屋の位置を調整
-     * @param {Array<BABYLON.Mesh>} meshes - メッシュ配列
-     * @param {BABYLON.Mesh} rootMesh - ルートメッシュ
+     * 子メッシュを処理
+     * @param {BABYLON.Mesh} mesh - 処理するメッシュ
      */
-    adjustRoomPosition(meshes, rootMesh) {
-        // 床の高さを取得
-        let floorY = 0;
-        for (const mesh of meshes) {
-            if (this.isFloorMesh(mesh)) {
-                floorY = mesh.position.y;
-                console.log("Floor original position:", floorY);
-                break;
-            }
+    processChildMesh(mesh) {
+        if (!mesh) return;
+        
+        const meshNameLower = mesh.name.toLowerCase();
+        
+        if (meshNameLower.includes('floor') || 
+            meshNameLower.includes('ground')) {
+            this.setupFloorMesh(mesh);
+        } else if (meshNameLower.includes('wall')) {
+            this.setupWallMesh(mesh);
         }
         
-        // モデル全体の位置を調整して床がY=0になるようにする
-        rootMesh.position.y = -floorY * rootMesh.scaling.y;
-        console.log("Adjusted room position:", rootMesh.position.y);
+        // デフォルトの設定
+        mesh.isPickable = true;
+        mesh.receiveShadows = true;
     }
 
     /**
-     * 床メッシュかどうか判定
-     * @param {BABYLON.Mesh} mesh - メッシュ
-     * @returns {boolean}
-     */
-    isFloorMesh(mesh) {
-        const name = mesh.name.toLowerCase();
-        return name === "floor" || 
-               name.includes("floor") || 
-               name.includes("ground") || 
-               name.includes("body");
-    }
-
-    /**
-     * 壁メッシュかどうか判定
-     * @param {BABYLON.Mesh} mesh - メッシュ
-     * @returns {boolean}
-     */
-    isWallMesh(mesh) {
-        const name = mesh.name.toLowerCase();
-        return name === "wall" || 
-               name.includes("wall") || 
-               name.includes("building") || 
-               name.includes("structure");
-    }
-
-    /**
-     * 装飾メッシュかどうか判定
-     * @param {BABYLON.Mesh} mesh - メッシュ
-     * @returns {boolean}
-     */
-    isDecorationMesh(mesh) {
-        return !mesh.name.includes("helper") && 
-               !mesh.name.includes("grid") && 
-               !mesh.name.includes("preview");
-    }
-
-    /**
-     * 床をセットアップ
+     * 床メッシュをセットアップ
      * @param {BABYLON.Mesh} mesh - 床メッシュ
      */
-    setupFloor(mesh) {
-        if (!this.ground) {
-            this.ground = mesh;
-        }
+    setupFloorMesh(mesh) {
+        console.log(`Setting up floor mesh: ${mesh.name}`);
         
-        mesh.isPickable = true;
+        this.ground = mesh;
+        mesh.metadata = { isFloor: true };
         mesh.receiveShadows = true;
+        mesh.checkCollisions = true;
         
-        // メタデータを追加
-        mesh.metadata = mesh.metadata || {};
-        mesh.metadata.isFloor = true;
+        // インタラクション用のタグを設定
+        mesh.metadata.interactionTag = 'floor';
         
-        // 影を受け取るリストに追加
         this.shadowReceivers.push(mesh);
-        
-        console.log("Floor mesh setup:", mesh.name);
     }
 
     /**
-     * 壁をセットアップ
+     * 壁メッシュをセットアップ
      * @param {BABYLON.Mesh} mesh - 壁メッシュ
      */
-    setupWall(mesh) {
+    setupWallMesh(mesh) {
+        console.log(`Setting up wall mesh: ${mesh.name}`);
+        
         this.walls.push(mesh);
-        
-        mesh.isPickable = true;
+        mesh.metadata = { isWall: true };
         mesh.receiveShadows = true;
-        mesh.isVisible = true;
+        mesh.checkCollisions = true;
         
-        // 不透明マテリアルを作成
-        this.createOpaqueWallMaterial(mesh);
+        // インタラクション用のタグを設定
+        mesh.metadata.interactionTag = 'wall';
         
-        // メタデータを追加
-        const normalDirection = this.calculateWallNormal(mesh);
-        mesh.metadata = {
-            isInteriorWall: true,
-            normalDirection: normalDirection
-        };
+        // 壁の透明度を設定
+        if (mesh.material) {
+            mesh.material.alpha = 0.8;
+            mesh.material.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+        }
         
-        // 影を受け取るリストに追加
         this.shadowReceivers.push(mesh);
-        
-        console.log("Wall mesh setup:", mesh.name);
-    }
-
-    /**
-     * 装飾をセットアップ
-     * @param {BABYLON.Mesh} mesh - 装飾メッシュ
-     */
-    setupDecoration(mesh) {
-        // 大きなオブジェクトは影を落とす
-        if (this.isLargeObject(mesh)) {
-            this.shadowCasters.push(mesh);
-            console.log("Shadow caster added:", mesh.name);
-        }
-        
-        // すべてのオブジェクトは影を受け取る
-        mesh.receiveShadows = true;
-        this.shadowReceivers.push(mesh);
-    }
-
-    /**
-     * メッシュのマテリアルを最適化
-     * @param {BABYLON.Mesh} mesh - メッシュ
-     */
-    optimizeMeshMaterial(mesh) {
-        if (!mesh.material) return;
-        
-        // 反射を抑える
-        mesh.material.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
-        mesh.material.specularPower = 1;
-        
-        // 環境反射を抑える
-        if (mesh.material.reflectionTexture) {
-            mesh.material.reflectionTexture.level = 0.1;
-        }
-        
-        // PBRマテリアルの場合
-        if (mesh.material.metallic !== undefined) {
-            mesh.material.metallic = 0.1;
-            mesh.material.roughness = 0.9;
-        }
-    }
-
-    /**
-     * 壁用の不透明マテリアルを作成
-     * @param {BABYLON.Mesh} wallMesh - 壁メッシュ
-     */
-    createOpaqueWallMaterial(wallMesh) {
-        const material = new BABYLON.StandardMaterial(
-            "wallMaterial_" + wallMesh.name, 
-            this.scene
-        );
-        
-        // 元のマテリアルの色を保持
-        if (wallMesh.material && wallMesh.material.diffuseColor) {
-            material.diffuseColor = wallMesh.material.diffuseColor.clone();
-        } else {
-            material.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.8);
-        }
-        
-        // 完全に不透明な設定
-        material.alpha = 1.0;
-        material.transparencyMode = BABYLON.Material.MATERIAL_OPAQUE;
-        material.backFaceCulling = true;
-        material.twoSidedLighting = false;
-        material.needDepthPrePass = true;
-        material.disableDepthWrite = false;
-        material.zOffset = -10;
-        
-        // 反射を抑制
-        material.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
-        material.specularPower = 1;
-        material.reflectionTexture = null;
-        
-        // オリジナルマテリアルを保存
-        if (!wallMesh._originalMaterial) {
-            wallMesh._originalMaterial = wallMesh.material;
-        }
-        
-        wallMesh.material = material;
-    }
-
-    /**
-     * 壁の法線方向を計算
-     * @param {BABYLON.Mesh} wallMesh - 壁メッシュ
-     * @returns {BABYLON.Vector3} 法線方向
-     */
-    calculateWallNormal(wallMesh) {
-        const boundingInfo = wallMesh.getBoundingInfo();
-        const min = boundingInfo.boundingBox.minimumWorld;
-        const max = boundingInfo.boundingBox.maximumWorld;
-        
-        // 壁の中心位置
-        const center = new BABYLON.Vector3(
-            (min.x + max.x) / 2,
-            (min.y + max.y) / 2,
-            (min.z + max.z) / 2
-        );
-        
-        // 部屋の中心位置
-        const roomCenter = new BABYLON.Vector3(
-            (this.roomBoundary.MIN_X + this.roomBoundary.MAX_X) / 2,
-            center.y,
-            (this.roomBoundary.MIN_Z + this.roomBoundary.MAX_Z) / 2
-        );
-        
-        // 壁の法線方向（部屋の中心に向かう方向）
-        return roomCenter.subtract(center).normalize();
-    }
-
-    /**
-     * 大きなオブジェクトかどうか判定
-     * @param {BABYLON.Mesh} mesh - メッシュ
-     * @returns {boolean}
-     */
-    isLargeObject(mesh) {
-        if (!mesh.getBoundingInfo) return false;
-        
-        const boundingBox = mesh.getBoundingInfo().boundingBox;
-        return boundingBox.extendSize.y > 1;
     }
 
     /**
@@ -348,139 +196,106 @@ export class RoomManager {
         console.log("Creating default floor...");
         
         this.ground = BABYLON.MeshBuilder.CreateGround(
-            "ground", 
-            { width: 20, height: 20 }, 
+            "defaultGround",
+            {
+                width: Math.abs(this.roomBoundary.MAX_X - this.roomBoundary.MIN_X),
+                height: Math.abs(this.roomBoundary.MAX_Z - this.roomBoundary.MIN_Z),
+                subdivisions: 4
+            },
             this.scene
         );
         
-        const groundMat = new BABYLON.StandardMaterial("groundMaterial", this.scene);
-        groundMat.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4);
-        groundMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
-        
-        this.ground.material = groundMat;
         this.ground.position.y = 0;
+        this.ground.metadata = { 
+            isFloor: true,
+            interactionTag: 'floor'
+        };
+        
+        // デフォルトマテリアル
+        const groundMaterial = new BABYLON.StandardMaterial("groundMaterial", this.scene);
+        groundMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+        groundMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+        this.ground.material = groundMaterial;
+        
         this.ground.receiveShadows = true;
-        this.ground.isPickable = true;
+        this.ground.checkCollisions = true;
         
         this.shadowReceivers.push(this.ground);
+        this.roomMeshes.push(this.ground);
     }
 
     /**
      * 影受け取り用の透明床を作成
      */
     createShadowFloor() {
-        const shadowFloor = BABYLON.MeshBuilder.CreateGround(
-            "shadowFloor",
-            { width: 20, height: 20 },
+        const shadowGround = BABYLON.MeshBuilder.CreateGround(
+            "shadowGround",
+            {
+                width: 50,
+                height: 50,
+                subdivisions: 4
+            },
             this.scene
         );
         
-        const shadowFloorMat = new BABYLON.StandardMaterial("shadowFloorMat", this.scene);
-        shadowFloorMat.alpha = 0.01;
-        shadowFloorMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
-        shadowFloorMat.specularColor = new BABYLON.Color3(0, 0, 0);
-        shadowFloorMat.emissiveColor = new BABYLON.Color3(0, 0, 0);
-        shadowFloorMat.ambientColor = new BABYLON.Color3(0, 0, 0);
-        shadowFloorMat.backFaceCulling = false;
+        shadowGround.position.y = 0.001;
+        shadowGround.isPickable = false;
         
-        shadowFloor.material = shadowFloorMat;
-        shadowFloor.receiveShadows = true;
-        shadowFloor.position.y = 0.02;
-        shadowFloor.isPickable = false;
+        // 透明なマテリアル
+        const shadowMaterial = new BABYLON.StandardMaterial("shadowMaterial", this.scene);
+        shadowMaterial.alpha = 0.01;
+        shadowMaterial.diffuseColor = new BABYLON.Color3(1, 1, 1);
+        shadowMaterial.backFaceCulling = false;
+        shadowGround.material = shadowMaterial;
         
-        this.shadowReceivers.push(shadowFloor);
+        shadowGround.receiveShadows = true;
+        this.shadowReceivers.push(shadowGround);
     }
 
     /**
-     * 部屋の境界を計算
+     * 影の設定
      */
-    calculateRoomBoundary() {
-        if (this.walls.length === 0) {
-            console.log("No walls found, using default room boundary");
-            return;
-        }
-        
-        let minX = Infinity, maxX = -Infinity;
-        let minZ = Infinity, maxZ = -Infinity;
-        
-        this.walls.forEach(wall => {
-            const boundingInfo = wall.getBoundingInfo();
-            const min = boundingInfo.boundingBox.minimumWorld;
-            const max = boundingInfo.boundingBox.maximumWorld;
-            
-            minX = Math.min(minX, min.x);
-            maxX = Math.max(maxX, max.x);
-            minZ = Math.min(minZ, min.z);
-            maxZ = Math.max(maxZ, max.z);
-        });
-        
-        // 少し内側に調整
-        const margin = 1.0;
-        this.roomBoundary.MIN_X = minX + margin;
-        this.roomBoundary.MAX_X = maxX - margin;
-        this.roomBoundary.MIN_Z = minZ + margin;
-        this.roomBoundary.MAX_Z = maxZ - margin;
-        
-        console.log("Room boundary calculated:", this.roomBoundary);
-    }
-
-    /**
-     * 床メッシュを取得
-     * @returns {BABYLON.Mesh}
-     */
-    getGround() {
-        return this.ground;
-    }
-
-    /**
-     * 壁メッシュの配列を取得
-     * @returns {Array<BABYLON.Mesh>}
-     */
-    getWalls() {
-        return this.walls;
-    }
-
-    /**
-     * 部屋の境界を取得
-     * @returns {Object}
-     */
-    getRoomBoundary() {
-        return { ...this.roomBoundary };
-    }
-
-    /**
-     * 影を受け取るメッシュの配列を取得
-     * @returns {Array<BABYLON.Mesh>}
-     */
-    getShadowReceivers() {
-        return this.shadowReceivers;
-    }
-
-    /**
-     * 影を生成するメッシュの配列を取得
-     * @returns {Array<BABYLON.Mesh>}
-     */
-    getShadowCasters() {
-        return this.shadowCasters;
-    }
-
-    /**
-     * クリーンアップ
-     */
-    dispose() {
-        console.log("Disposing RoomManager...");
-        
-        // すべてのルームメッシュを破棄
+    setupShadows() {
+        // 床以外のオブジェクトは影を落とす
         this.roomMeshes.forEach(mesh => {
-            if (mesh && !mesh.isDisposed()) {
-                mesh.dispose();
+            if (mesh !== this.ground && !mesh.metadata?.isFloor) {
+                this.shadowCasters.push(mesh);
             }
         });
-        
-        this.ground = null;
-        this.walls = [];
-        this.roomMeshes = [];
-        this.shadowReceivers = [];
-        this.shadowCasters = [];
     }
+
+    /**
+     * 境界ヘルパーを作成（デバッグ用）
+     */
+    createBoundaryHelper() {
+        const boundaryLines = [];
+        
+        // 床面の境界線
+        const points = [
+            new BABYLON.Vector3(this.roomBoundary.MIN_X, this.roomBoundary.MIN_Y, this.roomBoundary.MIN_Z),
+            new BABYLON.Vector3(this.roomBoundary.MAX_X, this.roomBoundary.MIN_Y, this.roomBoundary.MIN_Z),
+            new BABYLON.Vector3(this.roomBoundary.MAX_X, this.roomBoundary.MIN_Y, this.roomBoundary.MAX_Z),
+            new BABYLON.Vector3(this.roomBoundary.MIN_X, this.roomBoundary.MIN_Y, this.roomBoundary.MAX_Z),
+            new BABYLON.Vector3(this.roomBoundary.MIN_X, this.roomBoundary.MIN_Y, this.roomBoundary.MIN_Z)
+        ];
+        
+        const boundaryLine = BABYLON.MeshBuilder.CreateLines(
+            "boundaryLine",
+            { points: points },
+            this.scene
+        );
+        
+        boundaryLine.color = new BABYLON.Color3(1, 0, 0);
+        boundaryLine.isPickable = false;
+        
+        return boundaryLine;
+    }
+
+    // ゲッターメソッド
+    getGround() { return this.ground; }
+    getWalls() { return this.walls; }
+    getRoomMeshes() { return this.roomMeshes; }
+    getRoomBoundary() { return this.roomBoundary; }
+    getShadowReceivers() { return this.shadowReceivers; }
+    getShadowCasters() { return this.shadowCasters; }
 }

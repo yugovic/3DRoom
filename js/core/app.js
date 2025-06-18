@@ -14,12 +14,14 @@ import { AssetPlacer } from '../assets/asset-placer.js';
 import { InteractionManager } from '../interaction/interaction-manager.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { SelectionController } from '../interaction/selection-controller.js';
+import { LoadingManager } from '../ui/loading-manager.js';
 
 export class App {
     constructor(canvas) {
         this.canvas = canvas;
         this.managers = {};
         this.isInitialized = false;
+        this.loadingManager = new LoadingManager();
     }
 
     /**
@@ -29,15 +31,21 @@ export class App {
     async initialize() {
         try {
             console.log("Initializing application...");
+            
+            // ローディング表示を開始
+            this.loadingManager.show("アプリケーションを初期化中...");
+            this.loadingManager.setProgress(10);
 
             // シーンマネージャーを初期化
             this.managers.scene = new SceneManager(this.canvas);
             await this.managers.scene.initialize();
+            this.loadingManager.setProgress(20);
 
             const scene = this.managers.scene.getScene();
             const errorHandler = this.managers.scene.getErrorHandler();
 
             // 各マネージャーを初期化
+            this.loadingManager.updateMessage("マネージャーを初期化中...");
             this.managers.room = new RoomManager(scene, errorHandler);
             this.managers.grid = new GridSystem(scene, errorHandler);
             this.managers.lighting = new LightingSystem(scene, errorHandler);
@@ -52,6 +60,7 @@ export class App {
             );
             this.managers.interaction = new InteractionManager(this, errorHandler);
             this.managers.ui = new UIManager(this, errorHandler);
+            this.loadingManager.setProgress(40);
 
             // 環境をセットアップ
             await this.setupEnvironment();
@@ -59,12 +68,20 @@ export class App {
             // インタラクションとUIを初期化
             this.managers.interaction.initialize();
             this.managers.ui.initialize();
+            this.loadingManager.setProgress(100);
 
             this.isInitialized = true;
             console.log("Application initialized successfully");
+            
+            // ローディング表示を非表示
+            setTimeout(() => {
+                this.loadingManager.hide();
+            }, 500);
 
         } catch (error) {
             console.error("Failed to initialize application:", error);
+            this.loadingManager.showError(error.message);
+            
             if (this.managers.scene) {
                 this.managers.scene.getErrorHandler().handleCriticalError(
                     error, 
@@ -80,30 +97,52 @@ export class App {
      * @returns {Promise<void>}
      */
     async setupEnvironment() {
-        // 部屋をロード
-        await this.managers.room.loadRoom();
-        
-        // アセットを事前ロード
-        await this.managers.assetLoader.preloadAssets();
-        
-        // グリッドを作成
-        this.managers.grid.initialize(
-            this.managers.room.getGround(),
-            this.managers.room.getWalls()
-        );
-        
-        // ライティングをセットアップ
-        this.managers.lighting.setupLights();
-        
-        // シャドウレシーバーとキャスターを設定
-        this.managers.lighting.setShadowReceivers(this.managers.room.getShadowReceivers());
-        this.managers.lighting.setShadowCasters(this.managers.room.getShadowCasters());
-        
-        // AssetPlacerにシャドウジェネレーターを設定
-        this.managers.assetPlacer.setShadowGenerator(this.managers.lighting.getShadowGenerator());
-        
-        // カメラをセットアップ
-        this.managers.camera.setupDefaultCamera();
+        try {
+            // 部屋をロード
+            this.loadingManager.updateMessage("3Dルームをロード中...");
+            await this.managers.room.loadRoom();
+            this.loadingManager.setProgress(60);
+            
+            // アセットを事前ロード
+            this.loadingManager.updateMessage("アセットをプリロード中...");
+            
+            // アセットローダーのプログレスを監視
+            let loadedCount = 0;
+            const totalAssets = 3; // バーガー、レコード、ジュースボックス
+            
+            this.managers.assetLoader.onAssetsLoaded(() => {
+                loadedCount = totalAssets;
+                this.loadingManager.updateAssetProgress(loadedCount, totalAssets);
+            });
+            
+            await this.managers.assetLoader.preloadAssets();
+            this.loadingManager.setProgress(80);
+            
+            // グリッドを作成
+            this.loadingManager.updateMessage("環境を構築中...");
+            this.managers.grid.initialize(
+                this.managers.room.getGround(),
+                this.managers.room.getWalls()
+            );
+            
+            // ライティングをセットアップ
+            this.managers.lighting.setupLights();
+            
+            // シャドウレシーバーとキャスターを設定
+            this.managers.lighting.setShadowReceivers(this.managers.room.getShadowReceivers());
+            this.managers.lighting.setShadowCasters(this.managers.room.getShadowCasters());
+            
+            // AssetPlacerにシャドウジェネレーターを設定
+            this.managers.assetPlacer.setShadowGenerator(this.managers.lighting.getShadowGenerator());
+            
+            // カメラをセットアップ
+            this.managers.camera.setupDefaultCamera();
+            this.loadingManager.setProgress(90);
+            
+        } catch (error) {
+            this.loadingManager.showError("環境のセットアップに失敗しました");
+            throw error;
+        }
     }
 
     /**
@@ -153,6 +192,14 @@ export class App {
     }
 
     /**
+     * ローディングマネージャーを取得
+     * @returns {LoadingManager}
+     */
+    getLoadingManager() {
+        return this.loadingManager;
+    }
+
+    /**
      * アプリケーションの状態を取得
      * @returns {Object} アプリケーション状態
      */
@@ -168,20 +215,10 @@ export class App {
             gridSettings: this.managers.grid ? 
                 this.managers.grid.getSettings() : null,
             lightingSettings: this.managers.lighting ? 
-                this.managers.lighting.getSettings() : null
+                this.managers.lighting.getSettings() : null,
+            assetLoadingStatus: this.managers.assetLoader ? 
+                this.managers.assetLoader.getLoadingStatus() : null
         };
-    }
-
-    /**
-     * スクリーンショットを撮る
-     * @param {Object} options - オプション
-     * @returns {Promise<string>} スクリーンショットのDataURL
-     */
-    async takeScreenshot(options = {}) {
-        if (!this.managers.scene) {
-            throw new Error("Scene manager not initialized");
-        }
-        return await this.managers.scene.takeScreenshot(options);
     }
 
     /**
@@ -189,10 +226,37 @@ export class App {
      * @returns {Object} パフォーマンス統計
      */
     getPerformanceStats() {
-        if (!this.managers.scene) {
+        if (!this.managers.scene || !this.getScene()) {
             return null;
         }
-        return this.managers.scene.getPerformanceStats();
+        
+        const scene = this.getScene();
+        const engine = this.getEngine();
+        
+        if (!scene || !engine) {
+            return null;
+        }
+        
+        return {
+            fps: engine.getFps(),
+            activeMeshes: scene.getActiveMeshes().length,
+            totalMeshes: scene.meshes.length,
+            totalVertices: scene.getTotalVertices(),
+            drawCalls: scene.getEngine().drawCalls || 0
+        };
+    }
+
+    /**
+     * スクリーンショットを撮る
+     * @param {Object} options - スクリーンショットオプション
+     * @returns {Promise<string>} DataURL
+     */
+    async takeScreenshot(options = {}) {
+        if (!this.managers.scene) {
+            throw new Error("Scene not initialized");
+        }
+        
+        return await this.managers.scene.takeScreenshot(options);
     }
 
     /**
@@ -229,18 +293,19 @@ export class App {
      */
     dispose() {
         console.log("Disposing application...");
-
-        // 各マネージャーを破棄（逆順）
-        const managerNames = Object.keys(this.managers).reverse();
         
-        for (const name of managerNames) {
-            const manager = this.managers[name];
+        // すべてのマネージャーをクリーンアップ
+        Object.values(this.managers).forEach(manager => {
             if (manager && typeof manager.dispose === 'function') {
-                console.log(`Disposing ${name} manager...`);
                 manager.dispose();
             }
+        });
+        
+        // ローディングマネージャーをクリーンアップ
+        if (this.loadingManager) {
+            this.loadingManager.dispose();
         }
-
+        
         this.managers = {};
         this.isInitialized = false;
         

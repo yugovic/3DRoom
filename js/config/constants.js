@@ -1,4 +1,4 @@
-// js/config/Constants.js
+// js/config/constants.js
 /**
  * アプリケーション全体で使用する定数
  */
@@ -15,9 +15,18 @@ export const ASSET_URLS = {
 // アセットタイプ
 export const ASSET_TYPES = {
     CUBE: 'cube',       // バーガー
-    RECORD: 'record',   // レコードマシン
+    RECORD_MACHINE: 'recordMachine',   // レコードマシン
     JUICE_BOX: 'juiceBox',
     MIKE_DESK: 'mikeDesk'
+};
+
+// モデルのスケール設定
+export const MODEL_SCALES = {
+    ROOM: { x: 0.1, y: 0.1, z: 0.1 },           // 部屋のスケール (1/10)
+    BURGER: { x: 0.5, y: 0.5, z: 0.5 },         // バーガーのスケール
+    RECORD_MACHINE: { x: 0.3, y: 0.3, z: 0.3 }, // レコードマシンのスケール
+    JUICE_BOX: { x: 0.15, y: 0.15, z: 0.15 },   // ジュースボックスのスケール
+    DEFAULT: { x: 1, y: 1, z: 1 }               // デフォルトスケール
 };
 
 // 部屋の境界
@@ -99,64 +108,82 @@ export const LIGHTING_SETTINGS = {
             INTENSITY: 0.3,
             RADIUS: 20
         }
+    },
+    SHADOW: {
+        GENERATOR_SIZE: 1024,
+        DARKNESS: 0.3,
+        BLUR: 2
     }
 };
 
-// 影の設定
+// シャドウ設定（独立したエクスポート）
 export const SHADOW_SETTINGS = {
-    RESOLUTION: 4096,
-    USE_BLUR: false,
-    USE_PCF: true,
-    QUALITY: 'HIGH',
-    BIAS: 0.0001,
-    NORMAL_BIAS: 0.005,
-    DARKNESS: 0.7,
-    DEPTH_SCALE: 30,
-    FRUSTUM_EDGE_FALLOFF: 0.1
+    RESOLUTION: 1024,           // シャドウマップの解像度
+    USE_BLUR: true,            // ブラーを使用するか
+    USE_PCF: true,             // PCFフィルタリングを使用するか
+    BIAS: 0.00001,             // シャドウのバイアス
+    NORMAL_BIAS: 0.000001,     // 法線バイアス
+    DEPTH_SCALE: 50,           // 深度スケール
+    DARKNESS: 0.3,             // 影の暗さ
+    BLUR: 2                    // ブラーの強度
 };
 
-// モデルのスケール設定
-export const MODEL_SCALES = {
-    ROOM: { x: 0.1, y: 0.1, z: 0.1 },
-    BURGER: { x: 0.5, y: 0.5, z: 0.5 },
-    RECORD: { x: 0.1, y: 0.1, z: 0.1 },
-    JUICE_BOX: { x: 0.1, y: 0.1, z: 0.1 },
-    MIKE_DESK: { x: 0.3, y: 0.3, z: 0.3 }
+// プリセット色
+export const PRESET_COLORS = {
+    MIKE_DESK: new BABYLON.Color3(0.5, 0.3, 0.2),  // 茶色
+    GRID_MAIN: new BABYLON.Color3(0.2, 0.8, 0.8),
+    GRID_SECONDARY: new BABYLON.Color3(0.2, 0.4, 0.8),
+    SELECTION_HIGHLIGHT: new BABYLON.Color3(0, 1, 0),
+    WALL_OPACITY: 0.8
+};
+
+// アニメーション設定
+export const ANIMATION_SETTINGS = {
+    ROTATION_SPEED: Math.PI / 2,  // 90度回転
+    ROTATION_DURATION: 300,       // ミリ秒
+    PLACEMENT_DURATION: 200       // ミリ秒
 };
 
 // UI設定
 export const UI_SETTINGS = {
-    ZOOM: {
-        MIN: 0.5,
-        MAX: 2.0,
-        STEP: 0.1,
-        DEFAULT: 1.0
-    },
-    PARTICLE_EFFECT: {
-        COUNT: 50,
-        MIN_LIFETIME: 0.3,
-        MAX_LIFETIME: 0.7,
-        EMIT_RATE: 100,
-        UPDATE_SPEED: 0.01
-    }
+    CONTROLS_WIDTH: 280,          // コントロールパネルの幅
+    BUTTON_HEIGHT: 35,            // ボタンの高さ
+    PANEL_PADDING: 15,            // パネルのパディング
+    ANIMATION_DURATION: 300,      // UIアニメーションの時間
+    ERROR_DISPLAY_TIME: 5000,     // エラー表示時間
+    SUCCESS_DISPLAY_TIME: 2000    // 成功メッセージ表示時間
 };
 
-// キーボード設定
-export const KEYBOARD_SETTINGS = {
-    FORWARD: 'KeyW',
-    BACKWARD: 'KeyS',
-    LEFT: 'KeyA',
-    RIGHT: 'KeyD',
-    UP: 'Space',
-    DOWN: 'KeyC',
-    SPRINT: 'ShiftLeft',
-    WALK: 'ControlLeft'
+// デバッグ設定
+export const DEBUG_SETTINGS = {
+    SHOW_BOUNDARY_HELPER: false,  // 境界ヘルパーを表示
+    SHOW_CAMERA_INFO: false,      // カメラ情報を表示
+    LOG_PERFORMANCE: false,       // パフォーマンスログを出力
+    LOG_INTERACTIONS: true,       // インタラクションログを出力
+    SHOW_MESH_NAMES: false,       // メッシュ名を表示
+    SHOW_WIREFRAME: false         // ワイヤーフレーム表示
 };
 
-// 移動速度
-export const MOVEMENT_SPEEDS = {
-    NORMAL: 4.0,
-    SPRINT: 8.0,
-    WALK: 2.0,
-    FORWARD_MULTIPLIER: 2.0  // 前後移動は左右より速い
+// パフォーマンス設定
+export const PERFORMANCE_SETTINGS = {
+    OPTIMIZE_SHADOWS: true,       // 影の最適化
+    USE_INSTANCING: true,         // インスタンシングを使用
+    MERGE_MESHES: false,          // メッシュのマージ
+    USE_LOD: false,               // LOD（Level of Detail）を使用
+    ANTIALIASING_SAMPLES: 4       // アンチエイリアシングサンプル数
+};
+
+// ファイル設定
+export const FILE_SETTINGS = {
+    MAX_FILE_SIZE: 50 * 1024 * 1024,  // 最大ファイルサイズ（50MB）
+    ALLOWED_EXTENSIONS: ['.glb', '.gltf', '.babylon'],
+    TEXTURE_EXTENSIONS: ['.jpg', '.jpeg', '.png', '.webp'],
+    EXPORT_QUALITY: 0.95         // エクスポート画質
+};
+
+// ネットワーク設定
+export const NETWORK_SETTINGS = {
+    TIMEOUT: 30000,              // タイムアウト時間（30秒）
+    RETRY_COUNT: 3,              // リトライ回数
+    RETRY_DELAY: 1000           // リトライ間隔（ミリ秒）
 };

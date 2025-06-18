@@ -482,9 +482,9 @@ export class InteractionManager {
                 }
                 break;
                 
-            case ASSET_TYPES.RECORD:
-                if (this.app.getManager('assetLoader').isModelAvailable('record')) {
-                    mesh = this.app.getManager('assetLoader').cloneModel('record', 'preview_record');
+            case ASSET_TYPES.RECORD_MACHINE:
+                if (this.app.getManager('assetLoader').isModelAvailable('recordMachine')) {
+                    mesh = this.app.getManager('assetLoader').cloneModel('recordMachine', 'preview_recordMachine');
                     if (mesh) {
                         mesh.setEnabled(true);
                         this.makeTransparent(mesh);
@@ -602,7 +602,7 @@ export class InteractionManager {
         switch (this.currentMode) {
             case ASSET_TYPES.CUBE:
                 return PRESET_COLORS.BURGER;
-            case ASSET_TYPES.RECORD:
+            case ASSET_TYPES.RECORD_MACHINE:
                 return PRESET_COLORS.RECORD;
             case ASSET_TYPES.JUICE_BOX:
                 return PRESET_COLORS.JUICE_BOX;

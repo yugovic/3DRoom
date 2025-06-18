@@ -75,6 +75,15 @@ export class ErrorHandler {
     }
 
     /**
+     * 一般的なエラーハンドラー
+     * @param {Error} error - エラー
+     * @param {string} component - エラーが発生したコンポーネント
+     */
+    handleError(error, component) {
+        this.showError(error, { component, severity: 'normal' });
+    }
+
+    /**
      * 警告を表示
      * @param {string} message - 警告メッセージ
      * @param {Object} context - 警告のコンテキスト情報

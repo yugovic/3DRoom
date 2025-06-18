@@ -162,7 +162,7 @@ export class UIManager {
     setupAssetButtons() {
         const buttons = [
             { element: this.elements.cubeBtn, type: ASSET_TYPES.CUBE },
-            { element: this.elements.recordBtn, type: ASSET_TYPES.RECORD },
+            { element: this.elements.recordBtn, type: ASSET_TYPES.RECORD_MACHINE },
             { element: this.elements.juiceBoxBtn, type: ASSET_TYPES.JUICE_BOX },
             { element: this.elements.mikeDeskBtn, type: ASSET_TYPES.MIKE_DESK }
         ];

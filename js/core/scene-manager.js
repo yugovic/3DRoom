@@ -12,6 +12,7 @@ export class SceneManager {
         this.engine = null;
         this.scene = null;
         this.errorHandler = new ErrorHandler();
+        this.highlightLayer = null; // ハイライトレイヤーを追加
         this.isInitialized = false;
     }
 
@@ -76,24 +77,31 @@ export class SceneManager {
                 envSettings.backgroundColor.a
             );
             
-            // 座標系を設定
-            this.scene.useRightHandedSystem = envSettings.useRightHandedSystem;
-            
-            // 環境光を設定
-            this.scene.ambientColor = new BABYLON.Color3(
-                envSettings.ambientColor.r,
-                envSettings.ambientColor.g,
-                envSettings.ambientColor.b
-            );
+            // 右手系座標を使用
+            if (envSettings.useRightHandedSystem) {
+                this.scene.useRightHandedSystem = true;
+            }
             
             // 深度レンダラーを設定
-            this.setupDepthRenderer();
+            this.scene.depthRenderer = new BABYLON.DepthRenderer(this.scene, {
+                useOnlyInActiveCamera: true,
+                depthScale: 10
+            });
             
-            // ハイライトレイヤーを作成
-            this.createHighlightLayer();
+            // 深度バッファの精度を向上
+            this.scene.getEngine().setDepthBuffer(true);
+            this.scene.getEngine().setDepthFunction(BABYLON.Engine.LEQUAL);
             
-            // レンダリング設定
-            this.setupRenderingSettings();
+            // Frustum Cullingの設定
+            this.scene.autoClear = false;
+            this.scene.skipFrustumClipping = true;
+            
+            // ハイライトレイヤーの作成
+            this.highlightLayer = new BABYLON.HighlightLayer("highlightLayer", this.scene, {
+                blurHorizontalSize: 2,
+                blurVerticalSize: 2,
+                mainTextureRatio: 0.5
+            });
             
             console.log("Scene created successfully");
         } catch (error) {
@@ -102,54 +110,12 @@ export class SceneManager {
     }
 
     /**
-     * 深度レンダラーの設定
-     */
-    setupDepthRenderer() {
-        this.scene.depthRenderer = new BABYLON.DepthRenderer(this.scene, {
-            useOnlyInActiveCamera: true,
-            depthScale: 10 // 深度スケールを増加して精度を向上
-        });
-        
-        // 深度バッファの精度を向上
-        this.scene.getEngine().setDepthBuffer(true);
-        this.scene.getEngine().setDepthFunction(BABYLON.Engine.LEQUAL);
-    }
-
-    /**
-     * ハイライトレイヤーの作成
-     */
-    createHighlightLayer() {
-        this.highlightLayer = new BABYLON.HighlightLayer("highlightLayer", this.scene, {
-            blurHorizontalSize: 2,
-            blurVerticalSize: 2,
-            mainTextureRatio: 0.5
-        });
-        
-        console.log("Highlight layer created");
-    }
-
-    /**
-     * レンダリング設定
-     */
-    setupRenderingSettings() {
-        // Frustum Cullingの設定
-        this.scene.autoClear = false;
-        this.scene.skipFrustumClipping = true;
-        
-        // レンダリング前の処理を登録
-        this.scene.registerBeforeRender(() => {
-            // 必要に応じて処理を追加
-        });
-    }
-
-    /**
-     * ウィンドウリサイズの処理
+     * ウィンドウリサイズイベントの設定
      */
     setupWindowResize() {
         window.addEventListener("resize", () => {
-            if (this.engine) {
-                this.engine.resize();
-            }
+            this.engine.resize();
+            console.log("Engine resized");
         });
     }
 
@@ -157,8 +123,8 @@ export class SceneManager {
      * レンダリングループの開始
      */
     startRenderLoop() {
-        if (!this.engine || !this.scene) {
-            this.errorHandler.showError("エンジンまたはシーンが初期化されていません");
+        if (!this.isInitialized) {
+            console.error("シーンが初期化されていません");
             return;
         }
 
@@ -262,75 +228,37 @@ export class SceneManager {
                     this.engine,
                     this.scene.activeCamera,
                     screenshotSize,
-                    (screenshot) => {
-                        // 元のスケーリングに戻す
+                    (data) => {
+                        // 元のスケーリングレベルに戻す
                         this.engine.setHardwareScalingLevel(originalScaling);
-                        resolve(screenshot);
+                        resolve(data);
                     }
                 );
             } catch (error) {
-                this.errorHandler.showError("スクリーンショットの作成に失敗しました: " + error.message);
+                this.errorHandler.handleError(error, 'SceneManager.takeScreenshot');
                 reject(error);
             }
         });
     }
 
     /**
-     * パフォーマンス統計を取得
-     * @returns {Object} パフォーマンス統計
-     */
-    getPerformanceStats() {
-        // Babylon.jsのバージョンや設定によっては _textureCollector が利用できないため、安全にアクセスする
-        let texturesCacheSize = 0;
-        const engine = this.scene.getEngine();
-        
-        try {
-            // テクスチャキャッシュサイズを安全に取得
-            if (engine.getCaps().s3tc && engine._textureCollector && engine._textureCollector.texturesCache) {
-                texturesCacheSize = engine._textureCollector.texturesCache.length;
-            }
-        } catch (e) {
-            console.warn('Failed to get textures cache size:', e);
-        }
-        
-        return {
-            fps: this.engine.getFps(),
-            activeMeshes: this.scene.getActiveMeshes().length,
-            totalMeshes: this.scene.meshes.length,
-            totalVertices: this.scene.getTotalVertices(),
-            drawCalls: engine.drawCalls,
-            texturesCacheSize: texturesCacheSize
-        };
-    }
-
-    /**
-     * クリーンアップ
+     * リソースのクリーンアップ
      */
     dispose() {
-        console.log("Disposing SceneManager...");
-        
-        // レンダリングループを停止
         this.stopRenderLoop();
         
-        // シーンの破棄
+        if (this.highlightLayer) {
+            this.highlightLayer.dispose();
+        }
+        
         if (this.scene) {
             this.scene.dispose();
-            this.scene = null;
         }
         
-        // エンジンの破棄
         if (this.engine) {
             this.engine.dispose();
-            this.engine = null;
         }
         
-        // エラーハンドラーの破棄
-        if (this.errorHandler) {
-            this.errorHandler.dispose();
-            this.errorHandler = null;
-        }
-        
-        this.isInitialized = false;
         console.log("SceneManager disposed");
     }
 }
