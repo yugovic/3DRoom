@@ -321,41 +321,13 @@ window.addEventListener("DOMContentLoaded", function() {
                 ensureWallOpacity(wall1);
                 wall2.isVisible = true;
                 ensureWallOpacity(wall2);
-                
-                // 壁のレンダリング順序を確実にする
-                wall1.renderingGroupId = 0;
-                wall2.renderingGroupId = 0;
-                wall1.alphaIndex = 0;
-                wall2.alphaIndex = 0;
             }
             
-            // 手動でクリアとレンダリングを制御
-            engine.wipeCaches(true); // キャッシュをクリア
-            
-            // 深度バッファとカラーバッファをクリア
+            // 前回のレンダリングの透明度バッファをクリア（手前の描画問題を解決）
             engine.clear(scene.clearColor, true, true, true);
-            
-            // シーンのレンダリングを手動で制御
-            const engine = scene.getEngine();
-            engine.setDepthBuffer(true);
-            engine.setDepthFunction(BABYLON.Engine.LEQUAL);
-            
-            // 壁を最初にレンダリング
-            if (wall1) wall1.renderingGroupId = 0;
-            if (wall2) wall2.renderingGroupId = 0;
             
             // シーンのレンダリング
             scene.render();
-            
-            // 選択されたオブジェクトがある場合は、最後にレンダリング
-            if (selectedMesh) {
-                selectedMesh.renderingGroupId = 2;
-                if (selectedMesh.getChildMeshes) {
-                    selectedMesh.getChildMeshes().forEach(child => {
-                        child.renderingGroupId = 2;
-                    });
-                }
-            }
         });
         
         // ウィンドウサイズ変更時の対応
@@ -397,33 +369,19 @@ function createScene() {
         // 正確な深度描画のために右手系座標を使用
         scene.useRightHandedSystem = true;
         
-        // 深度バッファとアルファブレンディングの設定
-        scene.autoClear = false; // 手動でクリアを制御
-        scene.autoClearDepthAndStencil = false; // 深度とステンシルバッファの自動クリアを無効化
-        scene.autoClearColor = false; // 色バッファの自動クリアを無効化
-        
-        // レンダリング順序の設定
-        scene.renderingManager.maintainStateBetweenFrames = true; // フレーム間で状態を維持
-        scene.renderingManager.useOrderIndependentTransparency = true; // 順序独立透明化を有効化
-        
         // 深度レンダラーを設定（精度を向上）
         scene.depthRenderer = new BABYLON.DepthRenderer(scene, {
             useOnlyInActiveCamera: true,
-            depthScale: 10, // 深度スケールを増加して精度を向上
-            generateMipMaps: false // ミップマップを無効化してパフォーマンスを向上
+            depthScale: 10 // 深度スケールを増加して精度を向上
         });
         
         // 深度バッファの精度を向上
-        const engine = scene.getEngine();
-        engine.setDepthBuffer(true);
-        engine.setDepthFunction(BABYLON.Engine.LEQUAL); // 深度比較関数を調整
-        engine.setAlphaMode(BABYLON.Engine.ALPHA_DISABLE); // アルファブレンディングを無効化
-        engine.setAlphaMode(BABYLON.Engine.ALPHA_COMBINE); // アルファ合成モードを設定
+        scene.getEngine().setDepthBuffer(true);
+        scene.getEngine().setDepthFunction(BABYLON.Engine.LEQUAL); // 深度比較関数を調整
         
-        // フラスタムカリングの設定
-        scene.frustumClipping = true; // フラスタムクリッピングを有効化
-        scene.skipFrustumClipping = false; // フラスタムクリッピングを有効化
-        scene.autoClear = false; // 自動クリアを無効化（手動で制御）
+        // Frustum Cullingを無効化（手前のオブジェクトが切れる問題を解決）
+        scene.autoClear = false; // 自動クリアを無効化
+        scene.skipFrustumClipping = true; // フラスタムクリッピングをスキップ
         
         // ハイライトレイヤーの作成（輝度を高めに設定）
         highlightLayer = new BABYLON.HighlightLayer("highlightLayer", scene, {
@@ -452,20 +410,10 @@ function createScene() {
 // グリッドの作成
 function createGrid() {
     try {
-        console.log("グリッド作成を開始します。現在の状態:", {
-            showGrid: showGrid,
-            gridSize: gridSize,
-            groundExists: !!ground,
-            existingGrid: !!grid
-        });
-
-        // 既存のグリッドをクリーンアップ
-        if (grid && grid !== ground) {
-            console.log("既存のグリッドメッシュを削除します:", grid.name);
-            grid.material && grid.material.dispose();
+        // 既存のグリッドがあれば削除
+        if (grid) {
             grid.dispose();
         }
-        grid = null;
         
         // 垂直ヘルパーラインの作成（配置時に使用）
         createVerticalHelper();
@@ -474,36 +422,75 @@ function createGrid() {
         const gridWidth = 2;
         const gridHeight = 2;
         
-        // グリッドオプションの定義
-        const gridOptions = {
-            majorUnitFrequency: 5,
-            minorUnitVisibility: 0.45,
-            gridRatio: parseFloat(gridSize) || 1.0,
-            mainColor: new BABYLON.Color3(0.2, 0.8, 0.8),
-            secondaryColor: new BABYLON.Color3(0.2, 0.4, 0.8),
-            opacity: 0.5
-        };
-
-        // 3Dアセットの床にグリッドを適用する場合
+        // 3Dアセットの床にグリッドを直接適用するため、
+        // 床のメッシュが存在するか確認
         if (ground) {
             console.log("3Dアセットの床にグリッドを適用します:", ground.name);
+            console.log("現在の床マテリアル:", ground.material ? ground.material.name : "なし");
+            console.log("保存されたオリジナルマテリアル:", ground._originalMaterial ? ground._originalMaterial.name : "なし");
+            
+            // グリッドのサイズと密度を設定
+            const gridOptions = {
+                majorUnitFrequency: 5,
+                minorUnitVisibility: 0.45,
+                gridRatio: parseFloat(gridSize) || 1.0,
+                mainColor: new BABYLON.Color3(0.2, 0.8, 0.8), // サイバーテーマに合わせた色
+                secondaryColor: new BABYLON.Color3(0.2, 0.4, 0.8), // サイバーテーマに合わせた色
+                opacity: 0.5
+            };
+            
+            // GridMaterialが利用可能か確認
+            if (typeof BABYLON.GridMaterial === 'undefined') {
+                console.warn("GridMaterialが利用できません。床への直接適用ができません。");
+                
+                // 代替として通常のグリッド
+                grid = BABYLON.MeshBuilder.CreateGround("gridMesh", {width: gridWidth, height: gridHeight}, scene);
+                const gridMat = new BABYLON.StandardMaterial("gridMat", scene);
+                gridMat.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+                gridMat.wireframe = true;
+                grid.material = gridMat;
+                grid.position.y = ground.position.y + 0.01;
+                grid.isPickable = false;
+                grid.receiveShadows = false;
+                grid.setEnabled(showGrid);
+                
+                // 床グリッドを作成したら、壁用のグリッドも作成
+                createWallGrids();
+                return;
+            }
             
             // オリジナルの床マテリアルを保存（クローンして保護）
             if (!ground._originalMaterial && ground.material) {
+                // マテリアルをクローンして保存（元のマテリアルが変更されないように）
                 if (ground.material.clone) {
                     ground._originalMaterial = ground.material.clone("ground_original_material");
-                    console.log("床のオリジナルマテリアルを保存:", ground._originalMaterial.name);
                 } else {
                     ground._originalMaterial = ground.material;
                 }
+                console.log("床のオリジナルマテリアルを保存:", ground._originalMaterial.name);
             }
             
-            // グリッド表示が有効な場合
+            // 床に直接グリッドマテリアルを適用
             if (showGrid) {
                 console.log("床グリッド表示を開始");
+                console.log("床メッシュの現在の状態:", {
+                    name: ground.name,
+                    currentMaterial: ground.material ? ground.material.name : "なし",
+                    originalMaterial: ground._originalMaterial ? ground._originalMaterial.name : "なし",
+                    isEnabled: ground.isEnabled(),
+                    isVisible: ground.isVisible,
+                    isPickable: ground.isPickable
+                });
                 
-                // グリッドマテリアルを作成
+                // GridMaterialが利用可能か再確認
+                if (typeof BABYLON.GridMaterial === 'undefined') {
+                    console.error("BABYLON.GridMaterialが利用できません");
+                    return;
+                }
+                
                 const floorGridMaterial = new BABYLON.GridMaterial(`floorGridMaterial_${Date.now()}`, scene);
+                
+                // グリッド素材の設定
                 floorGridMaterial.majorUnitFrequency = gridOptions.majorUnitFrequency;
                 floorGridMaterial.minorUnitVisibility = gridOptions.minorUnitVisibility;
                 floorGridMaterial.gridRatio = gridOptions.gridRatio;
@@ -511,13 +498,35 @@ function createGrid() {
                 floorGridMaterial.lineColor = gridOptions.secondaryColor;
                 floorGridMaterial.opacity = gridOptions.opacity;
                 
-                // 床のマテリアルをグリッドマテリアルに変更
+                console.log("作成したグリッドマテリアル設定:", {
+                    name: floorGridMaterial.name,
+                    majorUnitFrequency: floorGridMaterial.majorUnitFrequency,
+                    minorUnitVisibility: floorGridMaterial.minorUnitVisibility,
+                    gridRatio: floorGridMaterial.gridRatio,
+                    mainColor: floorGridMaterial.mainColor,
+                    lineColor: floorGridMaterial.lineColor,
+                    opacity: floorGridMaterial.opacity
+                });
+                
+                // 床のマテリアルを変更
                 ground.material = floorGridMaterial;
-                ground.isPickable = true;
+                ground.isPickable = true; // 配置のためにピック可能に設定
+                
+                // 強制的に床を表示状態にする
                 ground.setEnabled(true);
                 ground.isVisible = true;
                 
+                // シーンの再レンダリングを強制
+                scene.render();
+                
                 console.log("床グリッドマテリアルを適用:", floorGridMaterial.name);
+                console.log("床メッシュの更新後状態:", {
+                    name: ground.name,
+                    material: ground.material.name,
+                    isEnabled: ground.isEnabled(),
+                    isVisible: ground.isVisible,
+                    isPickable: ground.isPickable
+                });
             } else {
                 // グリッド非表示時はオリジナルのマテリアルに戻す
                 console.log("床グリッド非表示を開始");
@@ -527,15 +536,30 @@ function createGrid() {
                 } else {
                     console.warn("床のオリジナルマテリアルが見つかりません");
                 }
+                
+                // グリッド非表示でもアセット配置を可能にするため、ピック可能に設定
                 ground.isPickable = true;
+                console.log("床をピック可能に設定（アセット配置のため）");
             }
-        } 
-        // 床が見つからない場合は別メッシュとしてグリッドを作成
-        else {
+            
+            // グリッドの参照を保持
+            grid = ground;
+        } else {
+            // 床が見つからない場合は従来通り別メッシュとして作成
             console.log("床メッシュが見つからないため、別途グリッドを作成します");
             
-            // 新しいグリッドメッシュを作成
-            const newGrid = BABYLON.MeshBuilder.CreateGround("gridMesh", {width: gridWidth, height: gridHeight}, scene);
+            // グリッドのサイズと密度を設定
+            const gridOptions = {
+                size: gridWidth,
+                majorUnitFrequency: 5,
+                minorUnitVisibility: 0.45,
+                gridRatio: parseFloat(gridSize) || 1.0,
+                mainColor: new BABYLON.Color3(0.2, 0.8, 0.8),
+                secondaryColor: new BABYLON.Color3(0.2, 0.4, 0.8),
+                opacity: 0.5
+            };
+            
+            grid = BABYLON.MeshBuilder.CreateGround("gridMesh", {width: gridWidth, height: gridHeight}, scene);
             const gridMaterial = new BABYLON.GridMaterial("gridMaterial", scene);
             
             // グリッド素材の設定
@@ -546,123 +570,92 @@ function createGrid() {
             gridMaterial.lineColor = gridOptions.secondaryColor;
             gridMaterial.opacity = gridOptions.opacity;
             
-            newGrid.material = gridMaterial;
-            newGrid.position.y = 0.01;
-            newGrid.isPickable = false;
-            newGrid.receiveShadows = false;
-            newGrid.setEnabled(showGrid);
+            grid.material = gridMaterial;
+            grid.position.y = 0.01;
+            grid.isPickable = false;
+            grid.receiveShadows = false;
+            grid.setEnabled(showGrid);
             
-            grid = newGrid;
-            console.log("代替グリッドメッシュを作成:", grid.name);
+            console.log("代替グリッドメッシュを作成:", {
+                name: grid.name,
+                material: grid.material.name,
+                enabled: grid.isEnabled(),
+                visible: grid.isVisible,
+                showGrid: showGrid
+            });
         }
         
         // 壁用のグリッドを作成
         createWallGrids();
         
-        // シーンの再レンダリングをトリガー
-        scene.render();
-        
     } catch (e) {
-        console.error("グリッドの作成中にエラーが発生しました:", e);
-        // エラーが発生してもアプリケーションは続行
-        if (grid && grid !== ground) {
-            grid.dispose();
-            grid = null;
-        }
+        console.error("グリッドの作成に失敗しました:", e);
+        // グリッドがなくても部屋を表示するため、エラーをスローしない
     }
 }
 
 // グリッドマテリアルのクリーンアップ関数
 function cleanupGridMaterials() {
     try {
-        console.log("グリッドマテリアルのクリーンアップを開始");
-        
-        // 床と壁のマテリアルを元に戻す
-        const restoreOriginalMaterials = () => {
-            // 床のマテリアルを復元
-            if (ground && ground._originalMaterial) {
-                if (ground.material && ground.material !== ground._originalMaterial) {
-                    ground.material.dispose(); // 現在のマテリアルを破棄
-                }
+        // 床と壁のオリジナルマテリアルを保護するため、先に復元
+        if (ground) {
+            // 床のマテリアルを元に戻す
+            if (ground._originalMaterial) {
+                console.log("床のオリジナルマテリアルを復元してから削除");
                 ground.material = ground._originalMaterial;
-                console.log("床のマテリアルを復元:", ground._originalMaterial.name);
             }
             
-            // 壁のマテリアルを復元
-            [wall1, wall2].forEach((wallMesh, index) => {
-                if (wallMesh && wallMesh._originalMaterial) {
-                    if (wallMesh.material && wallMesh.material !== wallMesh._originalMaterial) {
-                        wallMesh.material.dispose(); // 現在のマテリアルを破棄
-                    }
-                    wallMesh.material = wallMesh._originalMaterial;
-                    console.log(`壁${index + 1}のマテリアルを復元:`, wallMesh._originalMaterial.name);
-                }
-            });
-        };
-        
-        // マテリアルを復元
-        restoreOriginalMaterials();
-        
-        // 未使用のグリッドマテリアルをクリーンアップ
-        const cleanupUnusedMaterials = () => {
-            // 使用中のマテリアルを収集
-            const usedMaterials = new Set();
-            
-            // シーン内のすべてのメッシュから使用中のマテリアルを収集
-            scene.meshes.forEach(mesh => {
-                if (mesh.material) {
-                    if (Array.isArray(mesh.material)) {
-                        mesh.material.forEach(mat => usedMaterials.add(mat));
-                    } else {
-                        usedMaterials.add(mesh.material);
-                    }
-                }
-            });
-            
-            // 未使用のグリッドマテリアルを削除
-            scene.materials.forEach(material => {
-                const isGridMaterial = material.name.includes("gridMat") || 
-                                     material.name.includes("GridMaterial");
-                
-                if (isGridMaterial && !usedMaterials.has(material) && !material.name.includes("_original")) {
-                    console.log("未使用のグリッドマテリアルを削除:", material.name);
-                    material.dispose();
-                }
-            });
-        };
-        
-        // 未使用のマテリアルをクリーンアップ
-        cleanupUnusedMaterials();
-        
-        // 孤立したグリッドメッシュを削除
-        const cleanupOrphanedGrids = () => {
-            const gridMeshes = scene.meshes.filter(mesh => 
-                mesh.name.startsWith("gridMesh") || 
-                mesh.name.startsWith("wallGrid") ||
-                (mesh.material && 
-                 (mesh.material.name.includes("gridMat") || 
-                  mesh.material.name.includes("GridMaterial")))
-            );
-            
-            gridMeshes.forEach(mesh => {
-                if (mesh !== ground && mesh !== wall1 && mesh !== wall2) {
-                    console.log("孤立したグリッドメッシュを削除:", mesh.name);
-                    mesh.dispose();
-                }
-            });
-        };
-        
-        // 孤立したグリッドをクリーンアップ
-        cleanupOrphanedGrids();
-        
-        // ガベージコレクションを促す
-        if (typeof globalThis.gc === 'function') {
-            globalThis.gc();
+            // グリッドマテリアルを削除
+            if (ground.material && (ground.material.name.includes("gridMat") || ground.material.name.includes("GridMaterial"))) {
+                console.log("床のグリッドマテリアルを削除:", ground.material.name);
+                const mat = ground.material;
+                ground.material = null;
+                mat.dispose();
+            }
         }
         
-        console.log("グリッドマテリアルのクリーンアップが完了しました");
+        // 壁のオリジナルマテリアルも復元
+        [wall1, wall2].forEach(wallMesh => {
+            if (wallMesh) {
+                if (wallMesh._originalMaterial && wallMesh.material !== wallMesh._originalMaterial) {
+                    console.log("壁のオリジナルマテリアルを復元してから削除:", wallMesh.name);
+                    wallMesh.material = wallMesh._originalMaterial;
+                }
+                
+                // 壁のグリッドマテリアルを削除
+                if (wallMesh.material && (wallMesh.material.name.includes("gridMat") || wallMesh.material.name.includes("GridMaterial"))) {
+                    console.log("壁のグリッドマテリアルを削除:", wallMesh.material.name);
+                    const mat = wallMesh.material;
+                    wallMesh.material = null;
+                    mat.dispose();
+                }
+            }
+        });
+        
+        // シーン内のグリッドマテリアルを削除
+        const materials = BABYLON.Material.Materials.filter(mat => 
+            mat && (mat.name.includes("gridMat") || mat.name.includes("GridMaterial")) &&
+            !mat.name.includes("_original")
+        );
+        
+        materials.forEach(mat => {
+            console.log("グリッドマテリアルを削除:", mat.name);
+            mat.dispose();
+        });
+        
+        // 既存の壁グリッドメッシュを削除
+        const existingGrids = scene.meshes.filter(mesh => 
+            mesh && mesh.name && mesh.name.startsWith("wallGrid")
+        );
+        
+        existingGrids.forEach(mesh => {
+            console.log("壁グリッドメッシュを削除:", mesh.name);
+            mesh.dispose();
+        });
+        
+        console.log("グリッドマテリアルクリーンアップ完了");
     } catch (e) {
-        console.error("グリッドマテリアルのクリーンアップ中にエラーが発生しました:", e);
+        console.error("グリッドマテリアルクリーンアップに失敗:", e);
     }
 }
 
@@ -1056,6 +1049,7 @@ function createRoom() {
                 wallMaterial.twoSidedLighting = false;
                 wallMaterial.needDepthPrePass = true;
                 wallMaterial.disableDepthWrite = false;
+                wallMaterial.zOffset = -10;
                 
                 // 反射を抑制
                 wallMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
@@ -1081,9 +1075,6 @@ function createRoom() {
                 mesh.receiveShadows = true; // 壁も影を受け取る
                 mesh.isVisible = true;
                 mesh.isPickable = true; // 壁へのアイテム配置を可能に
-                mesh.enableDepthWrite = true;
-                mesh.alphaIndex = 0; // アルファインデックスを最小値に設定
-                mesh.refreshBoundingInfo(); // 境界ボックスを更新
                 shadowReceivers.push(mesh);
             }
             // その他の装飾的なオブジェクト
@@ -1533,13 +1524,6 @@ function ensureWallOpacity(wallMesh) {
     wallMesh.occlusionType = BABYLON.AbstractMesh.OCCLUSION_TYPE_OPTIMISTIC;
     wallMesh.occlusionQueryAlgorithmType = BABYLON.AbstractMesh.OCCLUSION_ALGORITHM_TYPE_CONSERVATIVE;
     
-    // 深度バッファの設定を調整
-    wallMesh.enableDepthWrite = true;
-    wallMesh.alphaIndex = 0; // アルファインデックスを最小値に設定
-    
-    // メッシュの境界を更新
-    wallMesh.refreshBoundingInfo();
-    
     console.log("壁に新しい不透明マテリアルを適用:", wallMesh.name);
 }
 
@@ -1551,18 +1535,10 @@ function ensureWallsVisibility() {
         // 壁メッシュがある場合は表示を確保
         if (wall1) {
             wall1.isVisible = true;
-            wall1.renderingGroupId = 0; // 背景レイヤー
-            wall1.alphaIndex = 0; // アルファインデックスを最小値に
-            wall1.enableDepthWrite = true;
-            wall1.refreshBoundingInfo();
             ensureWallOpacity(wall1);
         }
         if (wall2) {
             wall2.isVisible = true;
-            wall2.renderingGroupId = 0; // 背景レイヤー
-            wall2.alphaIndex = 0; // アルファインデックスを最小値に
-            wall2.enableDepthWrite = true;
-            wall2.refreshBoundingInfo();
             ensureWallOpacity(wall2);
         }
         
@@ -1633,11 +1609,6 @@ function ensureWallsVisibility() {
         
         // レンダリング前に毎回、配置したオブジェクトが前面に表示されるようにする
         scene.onBeforeRenderObservable.clear(); // 既存のオブザーバーをクリア
-        
-        // 壁のレンダリング順序を確実にする
-        if (wall1) wall1.renderingGroupId = 0;
-        if (wall2) wall2.renderingGroupId = 0;
-        
         scene.onBeforeRenderObservable.add(() => {
             // すべてのメッシュをチェック
             scene.meshes.forEach(mesh => {
@@ -1787,9 +1758,8 @@ function setupUI() {
             // 既存のグリッドマテリアルを確実にクリーンアップ
             cleanupGridMaterials();
             
-            // グリッドの表示を更新（床と壁に直接適用）
+            // グリッドの表示を更新（createGrid内でcreateWallGridsも呼び出される）
             createGrid();
-            createWallGrids();
             
             // シーンの強制再レンダリング
             if (scene) {
@@ -3484,6 +3454,67 @@ ${snapPos}`;
                                     height: 0.9, // 3倍に拡大
                                     tessellation: 4 // 四面体（三角錐）になるよう設定
                                 }, scene);
+                                const material = new BABYLON.StandardMaterial("preview" + currentMode + "Material", scene);
+                                material.diffuseColor = new BABYLON.Color3(0.3, 0.8, 0.6); // 緑色
+                                material.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+                                material.specularPower = 1;
+                                material.alpha = 0.5;
+                                previewMesh.material = material;
+                            }
+                            
+                            if (previewMesh) {
+                                // 確実にピック不可に設定
+                                previewMesh.isPickable = false;
+                                
+                                // プレビューメッシュと子メッシュはすべてピック不可に
+                                if (previewMesh.getChildMeshes && typeof previewMesh.getChildMeshes === 'function') {
+                                    previewMesh.getChildMeshes().forEach(child => {
+                                        child.isPickable = false;
+                                    });
+                                }
+                                
+                                // レイキャストの判定も無効化（重要）
+                                previewMesh.checkCollisions = false;
+                                
+                                if (shadowGenerator) {
+                                    shadowGenerator.addShadowCaster(previewMesh);
+                                    previewMesh.receiveShadows = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // プレビューメッシュの位置を更新
+                    if (previewMesh) {
+                        // 常に配置可能な色を表示
+                        if (previewMesh.material) {
+                            if (currentMode === "cube") {
+                                if (preloadedModels.burger && previewMesh.getChildMeshes) {
+                                    // バーガーモデルのプレビューの場合、子メッシュに半透明処理
+                                    previewMesh.getChildMeshes().forEach(childMesh => {
+                                        if (childMesh.material) {
+                                            childMesh.material.alpha = 0.5;
+                                        }
+                                    });
+                                } else {
+                                    // 通常のプレビューメッシュの場合
+                                    previewMesh.material.diffuseColor = new BABYLON.Color3(0.4, 0.6, 0.9); // 青色
+                                }
+                            } else if (currentMode === "record") {
+                                if (preloadedModels.record && previewMesh.getChildMeshes) {
+                                    // GLBモデルのプレビューの場合、子メッシュに半透明処理
+                                    previewMesh.getChildMeshes().forEach(childMesh => {
+                                        if (childMesh.material) {
+                                            childMesh.material.alpha = 0.5;
+                                        }
+                                    });
+                                } else {
+                                    // 通常のプレビューメッシュの場合
+                                    previewMesh.material.diffuseColor = new BABYLON.Color3(0.7, 0.3, 0.8); // 紫色
+                                }
+                            } else if (currentMode === "juiceBox") {
+                                    if (preloadedModels.juiceBox && previewMesh.getChildMeshes) {
+                                    // GLBモデルのプレビューの場合、子メッシュに半透明処理
                                     previewMesh.getChildMeshes().forEach(childMesh => {
                                         if (childMesh.material) {
                                             childMesh.material.alpha = 0.5;
@@ -3499,25 +3530,24 @@ ${snapPos}`;
                             previewMesh.material.alpha = 0.5;
                         }
                         
-                        /* 部屋の内側かどうかに応じてマテリアルの色を変更
-                        if (isInside) {
-                            // 部屋の内側（配置可能）
-                            if (previewMesh.material) {
-                                if (currentMode === "cube") {
-                                    previewMesh.material.diffuseColor = new BABYLON.Color3(0.4, 0.6, 0.9); // 青色
-                                } else {
-                                    previewMesh.material.diffuseColor = new BABYLON.Color3(0.9, 0.4, 0.5); // 赤色
-                                }
-                                previewMesh.material.alpha = 0.5;
-                            }
-                        } else {
-                            // 部屋の外側（配置不可）
-                            if (previewMesh.material) {
-                                previewMesh.material.diffuseColor = new BABYLON.Color3(0.9, 0.2, 0.2); // 赤色
-                                previewMesh.material.alpha = 0.3;
-                            }
-                        }
-                        */
+                        // // 部屋の内側かどうかに応じてマテリアルの色を変更
+                        // if (isInside) {
+                        //     // 部屋の内側（配置可能）
+                        //     if (previewMesh.material) {
+                        //         if (currentMode === "cube") {
+                        //             previewMesh.material.diffuseColor = new BABYLON.Color3(0.4, 0.6, 0.9); // 青色
+                        //         } else {
+                        //             previewMesh.material.diffuseColor = new BABYLON.Color3(0.9, 0.4, 0.5); // 赤色
+                        //         }
+                        //         previewMesh.material.alpha = 0.5;
+                        //     }
+                        // } else {
+                        //     // 部屋の外側（配置不可）
+                        //     if (previewMesh.material) {
+                        //         previewMesh.material.diffuseColor = new BABYLON.Color3(0.9, 0.2, 0.2); // 赤色
+                        //         previewMesh.material.alpha = 0.3;
+                        //     }
+                        // }
                         
                         previewMesh.position = snappedPos;
                         
@@ -3560,11 +3590,10 @@ ${snapPos}`;
                                     verticalHelper.color = new BABYLON.Color3(0, 0.7, 1); // デフォルト青色
                                 }
                                 
-                                /* 部屋の内側かどうかに応じて色を変更
-                                verticalHelper.color = isInside ? 
-                                    new BABYLON.Color3(0, 0.7, 1) : // 青色（配置可能）
-                                    new BABYLON.Color3(0.9, 0.2, 0.2); // 赤色（配置不可）
-                                */
+                                // // 部屋の内側かどうかに応じて色を変更
+                                // verticalHelper.color = isInside ? 
+                                //     new BABYLON.Color3(0, 0.7, 1) : // 青色（配置可能）
+                                //     new BABYLON.Color3(0.9, 0.2, 0.2); // 赤色（配置不可）
                             }
                         }
                         
@@ -3572,7 +3601,7 @@ ${snapPos}`;
                         if (positionIndicator) {
                             positionIndicator.style.display = "block";
                             const placeType = isWallHit ? "壁" : "床";
-                            /* const statusText = isInside ? `配置可能（${placeType}）` : "配置不可（部屋の外側）"; */
+                            // const statusText = isInside ? `配置可能（${placeType}）` : "配置不可（部屋の外側）";
                             const statusText = `配置可能（${placeType}）`;
                             positionIndicator.textContent = `配置位置: (${snappedPos.x.toFixed(1)}, ${snappedPos.y.toFixed(1)}, ${snappedPos.z.toFixed(1)}) - ${statusText}`;
                         }
@@ -4187,94 +4216,98 @@ function placeObject(type, position) {
 // オブジェクトの選択
 function selectObject(mesh) {
     try {
-        // メッシュが存在しない、または破棄済みの場合は処理をスキップ
-        if (!mesh || mesh.isDisposed()) {
-            console.log("無効なメッシュが選択されました");
-            return;
-        }
-        
-        // 選択対象のメッシュを決定（複合アセットの場合は親メッシュを使用）
-        let targetMesh = mesh;
-        
-        // メタデータから親アセットを取得
-        if (mesh.metadata && mesh.metadata.parentAsset) {
-            targetMesh = mesh.metadata.parentAsset;
-        } else if (mesh.parent && (mesh.parent.name.startsWith("cube_") || mesh.parent.name.startsWith("record_") || mesh.parent.name.startsWith("juiceBox_") || mesh.parent.name.startsWith("mikeDesk_"))) {
-            targetMesh = mesh.parent;
-        }
-        
-        // 既に選択されているオブジェクトの場合は何もしない
-        if (selectedMesh === targetMesh) return;
-        
+        // 既存の選択を解除
         deselectObject();
-        selectedMesh = targetMesh;
         
-        // 選択されたメッシュとその子メッシュを選択可能に
-        targetMesh.isPickable = true;
-        if (targetMesh.getChildMeshes && typeof targetMesh.getChildMeshes === 'function') {
-            targetMesh.getChildMeshes().forEach(childMesh => {
-                childMesh.isPickable = true;
+        // 新しいメッシュを選択
+        selectedMesh = mesh;
+        
+        // メッシュが存在し、まだ破棄されていないことを確認
+        if (mesh && !mesh.isDisposed()) {
+            // 再度選択可能であることを確認
+            mesh.isPickable = true;
+            
+            // 子メッシュがある場合は、すべての子メッシュも選択可能に
+            if (mesh.getChildMeshes && typeof mesh.getChildMeshes === 'function') {
+                const childMeshes = mesh.getChildMeshes();
+                childMeshes.forEach(childMesh => {
+                    childMesh.isPickable = true;
+                });
+                console.log(`${mesh.name}の子メッシュ(${childMeshes.length}個)も選択可能に設定しました`);
+            }
+            
+            // ハイライト効果を適用
+            try {
+                // 白色のハイライト効果
+                highlightLayer.addMesh(mesh, BABYLON.Color3.White());
+                
+                // 子メッシュがある場合は、子メッシュもハイライト
+                if (mesh.getChildMeshes && typeof mesh.getChildMeshes === 'function') {
+                    mesh.getChildMeshes().forEach(childMesh => {
+                        highlightLayer.addMesh(childMesh, BABYLON.Color3.White());
+                    });
+                }
+            } catch (e) {
+                console.warn("ハイライト効果の適用に失敗しました:", e);
+            }
+            
+            // 選択時のフィードバック
+            const originalScaling = mesh.scaling.clone();
+            mesh.scaling = new BABYLON.Vector3(
+                originalScaling.x * 1.05,
+                originalScaling.y * 1.05,
+                originalScaling.z * 1.05
+            );
+            
+            setTimeout(() => {
+                if (mesh && !mesh.isDisposed()) {
+                    mesh.scaling = originalScaling;
+                }
+            }, 200);
+            
+            // アイテム選択時にカメラ操作を無効化
+            if (camera) {
+                camera.detachControl(canvas);
+                console.log("アイテム選択中: カメラ操作を無効化しました");
+            }
+            
+            console.log("オブジェクトを選択しました:", {
+                name: mesh.name,
+                isPickable: mesh.isPickable,
+                position: mesh.position,
+                childCount: mesh.getChildMeshes ? mesh.getChildMeshes().length : 0
             });
         }
-        
-        // ハイライトを追加
-        highlightLayer.addMesh(targetMesh, new BABYLON.Color3(0.5, 0.6, 0.8));
-        if (targetMesh.getChildMeshes && typeof targetMesh.getChildMeshes === 'function') {
-            targetMesh.getChildMeshes().forEach(childMesh => {
-                highlightLayer.addMesh(childMesh, new BABYLON.Color3(0.5, 0.6, 0.8));
-            });
-        }
-        
-        // レンダリンググループを最前面に設定
-        targetMesh.renderingGroupId = 2;
-        if (targetMesh.getChildMeshes) {
-            targetMesh.getChildMeshes().forEach(child => {
-                child.renderingGroupId = 2;
-            });
-        }
-        
-        // カメラコントロールを無効化
-        if (camera) camera.detachControl(canvas);
-        
-        console.log("オブジェクトを選択:", targetMesh.name);
     } catch (e) {
         console.error("オブジェクトの選択に失敗しました:", e);
     }
 }
 
 // オブジェクトの選択解除
-/**
- * オブジェクトの選択を解除する
- */
 function deselectObject() {
     try {
         if (selectedMesh) {
-            // ハイライトを削除
-            highlightLayer.removeMesh(selectedMesh);
-            
-            // 子メッシュのハイライトも削除
-            if (selectedMesh.getChildMeshes && typeof selectedMesh.getChildMeshes === 'function') {
-                selectedMesh.getChildMeshes().forEach(childMesh => {
-                    highlightLayer.removeMesh(childMesh);
-                });
+            // 選択中のメッシュのハイライトを解除
+            try {
+                highlightLayer.removeMesh(selectedMesh);
+                
+                // 子メッシュがある場合は、子メッシュのハイライトも解除
+                if (selectedMesh.getChildMeshes && typeof selectedMesh.getChildMeshes === 'function') {
+                    selectedMesh.getChildMeshes().forEach(childMesh => {
+                        highlightLayer.removeMesh(childMesh);
+                    });
+                }
+            } catch (e) {
+                console.warn("ハイライト解除に失敗しました:", e);
             }
             
-            // レンダリンググループをデフォルトに戻す
-            selectedMesh.renderingGroupId = 1;
-            if (selectedMesh.getChildMeshes) {
-                selectedMesh.getChildMeshes().forEach(child => {
-                    child.renderingGroupId = 1;
-                });
-            }
-            
-            console.log("オブジェクトの選択を解除:", selectedMesh.name);
             selectedMesh = null;
-        }
-        
-        // カメラコントロールを有効化
-        if (camera) {
-            camera.attachControl(canvas, true);
-            console.log("アイテム選択解除: カメラ操作を有効化しました");
+            
+            // アイテム選択解除時にカメラ操作を再度有効化
+            if (camera && canvas) {
+                camera.attachControl(canvas, true);
+                console.log("アイテム選択解除: カメラ操作を有効化しました");
+            }
         }
     } catch (e) {
         console.error("オブジェクトの選択解除に失敗しました:", e);
