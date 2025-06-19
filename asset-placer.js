@@ -40,14 +40,12 @@ export class AssetPlacer {
         try {
             let mesh = null;
             
-            console.log(`Placing asset: ${assetType} at position:`, position);
-            
             switch (assetType) {
                 case ASSET_TYPES.CUBE:
                     mesh = this.placeBurger(position);
                     break;
-                case ASSET_TYPES.RECORD:
-                    mesh = this.placeRecord(position);
+                case ASSET_TYPES.RECORD_MACHINE:
+                    mesh = this.placeRecordMachine(position);
                     break;
                 case ASSET_TYPES.JUICE_BOX:
                     mesh = this.placeJuiceBox(position);
@@ -70,26 +68,13 @@ export class AssetPlacer {
                 // 影を設定
                 this.setupShadow(mesh);
                 
-                // 確実にメッシュが表示されるようにする
-                mesh.setEnabled(true);
-                
-                // シーンを強制的に再レンダリング
-                this.scene.registerBeforeRender(() => {
-                    // 一度だけ実行
-                    this.scene.unregisterBeforeRender(arguments.callee);
-                    this.scene.render();
-                });
-                
-                console.log(`Asset placed successfully: ${assetType} (mesh: ${mesh.name}, enabled: ${mesh.isEnabled()}, pickable: ${mesh.isPickable})`);
-            } else {
-                console.error(`Failed to place asset: ${assetType}`);
+                console.log(`Asset placed: ${assetType} at`, position);
             }
             
             return mesh;
             
         } catch (error) {
             this.errorHandler.showError("アセットの配置に失敗しました: " + error.message);
-            console.error("Asset placement error:", error);
             return null;
         }
     }
@@ -124,22 +109,20 @@ export class AssetPlacer {
      * @param {BABYLON.Vector3} position - 配置位置
      * @returns {BABYLON.Mesh|null}
      */
-    placeRecord(position) {
-        if (this.assetLoader.isModelAvailable('record')) {
-            const timestamp = Date.now();
-            const record = this.assetLoader.cloneModel('record', `record_${timestamp}`);
-            
-            if (record) {
-                record.position = position.clone();
-                this.applyWallRotation(record);
-                this.setupMeshInteraction(record);
-                this.createBoundingBox(record, timestamp);
-                return record;
-            }
-        } else {
-            this.loadAndPlaceAsset(ASSET_URLS.RECORD_MACHINE, `record_${Date.now()}`, position);
+    placeRecordMachine(position) {
+        const timestamp = Date.now();
+        const recordMachine = this.assetLoader.cloneModel('recordMachine', `recordMachine_${timestamp}`);
+        
+        if (recordMachine) {
+            recordMachine.position = position.clone();
+            this.applyWallRotation(recordMachine);
+            this.setupMeshInteraction(recordMachine);
+            this.createBoundingBox(recordMachine, timestamp);
+            return recordMachine;
         }
         
+        // モデルが利用できない場合は動的にロード
+        this.loadAndPlaceAsset(ASSET_URLS.RECORD_MACHINE, `recordMachine_${Date.now()}`, position);
         return null;
     }
 
@@ -259,54 +242,39 @@ export class AssetPlacer {
      * @param {BABYLON.Mesh} mesh - メッシュ
      */
     setupMeshInteraction(mesh) {
-        // メインメッシュの設定
         mesh.isPickable = true;
         mesh.receiveShadows = true;
         mesh.renderingGroupId = 0;
-        mesh.cullingStrategy = BABYLON.AbstractMesh.CULLINGSTRATEGY_OPTIMISTIC_INCLUSION;
         
-        // アクティブメッシュとして常に選択
-        mesh.alwaysSelectAsActiveMesh = true;
-        
-        // メッシュのマテリアル設定
         if (mesh.material) {
             mesh.material.needDepthPrePass = false;
             mesh.material.separateCullingPass = true;
-            mesh.material.backFaceCulling = false;
-            mesh.material.forceDepthWrite = true;
         }
         
+        mesh.useShadowDepthMaterial = true;
+        mesh.alwaysSelectAsActiveMesh = true;
+        
         // 子メッシュの設定
-        const childMeshes = mesh.getChildMeshes();
-        if (childMeshes.length > 0) {
-            childMeshes.forEach(childMesh => {
-                // 子メッシュも選択可能に設定
+        if (mesh.getChildMeshes) {
+            mesh.getChildMeshes().forEach(childMesh => {
                 childMesh.isPickable = true;
                 childMesh.receiveShadows = true;
                 childMesh.renderingGroupId = 0;
                 childMesh.alwaysSelectAsActiveMesh = true;
                 childMesh.cullingStrategy = BABYLON.AbstractMesh.CULLINGSTRATEGY_OPTIMISTIC_INCLUSION;
                 
-                // 親メッシュへの参照を設定
+                // メタデータを追加
                 childMesh.metadata = childMesh.metadata || {};
                 childMesh.metadata.parentAsset = mesh;
                 
-                // 子メッシュのマテリアル設定
                 if (childMesh.material) {
-                    childMesh.material.needDepthPrePass = false;
+                    childMesh.material.zOffset = 1;
+                    childMesh.material.needDepthPrePass = true;
                     childMesh.material.backFaceCulling = false;
                     childMesh.material.forceDepthWrite = true;
-                    // zOffsetは削除（深度バッファの問題を避けるため）
                 }
             });
         }
-        
-        // メッシュのメタデータを設定
-        mesh.metadata = mesh.metadata || {};
-        mesh.metadata.isAsset = true;
-        mesh.metadata.canMove = true;
-        
-        console.log(`Mesh interaction setup complete for ${mesh.name} (pickable: ${mesh.isPickable}, children: ${childMeshes.length})`);
     }
 
     /**
@@ -456,7 +424,7 @@ export class AssetPlacer {
             this.placedAssets.splice(index, 1);
         }
         
-        if (mesh && mesh._scene) {
+        if (mesh && !mesh.isDisposed()) {
             mesh.dispose();
         }
     }
@@ -466,7 +434,7 @@ export class AssetPlacer {
      */
     clearAllAssets() {
         this.placedAssets.forEach(mesh => {
-            if (mesh && mesh._scene) {
+            if (mesh && !mesh.isDisposed()) {
                 mesh.dispose();
             }
         });

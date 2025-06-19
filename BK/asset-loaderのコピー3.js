@@ -13,14 +13,14 @@ export class AssetLoader {
         // プリロードしたモデルを保持
         this.preloadedModels = {
             burger: null,
-            record: null,
+            recordMachine: null,
             juiceBox: null
         };
         
         // ロード状態
         this.loadingStatus = {
             burger: false,
-            record: false,
+            recordMachine: false,
             juiceBox: false
         };
         
@@ -39,7 +39,7 @@ export class AssetLoader {
             // 並列でロード
             await Promise.all([
                 this.loadBurgerModel(),
-                this.loadRecordModel(),
+                this.loadRecordMachineModel(),
                 this.loadJuiceBoxModel()
             ]);
             
@@ -73,7 +73,8 @@ export class AssetLoader {
                     console.log("Burger model preloaded:", meshes.length + " meshes");
                     
                     if (meshes.length > 0) {
-                        const rootMesh = this.prepareMesh(meshes[0], MODEL_SCALES.BURGER);
+                        const scale = MODEL_SCALES.BURGER || { x: 0.5, y: 0.5, z: 0.5 };
+                        const rootMesh = this.prepareMesh(meshes[0], scale);
                         this.setupMeshProperties(rootMesh);
                         this.preloadedModels.burger = rootMesh;
                     }
@@ -94,10 +95,10 @@ export class AssetLoader {
      * レコードマシンモデルをロード
      * @returns {Promise<void>}
      */
-    async loadRecordModel() {
-        if (this.loadingStatus.record || this.preloadedModels.record) return;
+    async loadRecordMachineModel() {
+        if (this.loadingStatus.recordMachine || this.preloadedModels.recordMachine) return;
         
-        this.loadingStatus.record = true;
+        this.loadingStatus.recordMachine = true;
         
         return new Promise((resolve, reject) => {
             BABYLON.SceneLoader.ImportMesh(
@@ -109,18 +110,20 @@ export class AssetLoader {
                     console.log("Record machine model preloaded:", meshes.length + " meshes");
                     
                     if (meshes.length > 0) {
-                        const rootMesh = this.prepareMesh(meshes[0], MODEL_SCALES.RECORD);
+                        // MODEL_SCALES.RECORD_MACHINEが存在しない場合のフォールバック
+                        const scale = MODEL_SCALES.RECORD_MACHINE || MODEL_SCALES.DEFAULT || { x: 0.3, y: 0.3, z: 0.3 };
+                        const rootMesh = this.prepareMesh(meshes[0], scale);
                         this.setupMeshProperties(rootMesh);
-                        this.preloadedModels.record = rootMesh;
+                        this.preloadedModels.recordMachine = rootMesh;
                     }
                     
-                    this.loadingStatus.record = false;
+                    this.loadingStatus.recordMachine = false;
                     resolve();
                 },
                 null,
                 (scene, message) => {
-                    this.loadingStatus.record = false;
-                    reject(new Error("Failed to load record model: " + message));
+                    this.loadingStatus.recordMachine = false;
+                    reject(new Error("Failed to load record machine model: " + message));
                 }
             );
         });
@@ -145,7 +148,8 @@ export class AssetLoader {
                     console.log("Juice box model preloaded:", meshes.length + " meshes");
                     
                     if (meshes.length > 0) {
-                        const rootMesh = this.prepareMesh(meshes[0], MODEL_SCALES.JUICE_BOX);
+                        const scale = MODEL_SCALES.JUICE_BOX || { x: 0.15, y: 0.15, z: 0.15 };
+                        const rootMesh = this.prepareMesh(meshes[0], scale);
                         this.setupMeshProperties(rootMesh);
                         this.preloadedModels.juiceBox = rootMesh;
                     }
@@ -164,7 +168,7 @@ export class AssetLoader {
 
     /**
      * メッシュを準備
-     * @param {BABYLON.Mesh} mesh - メッシュ
+     * @param {BABYLON.Mesh} mesh - ルートメッシュ
      * @param {Object} scale - スケール設定
      * @returns {BABYLON.Mesh} 準備されたメッシュ
      */
@@ -172,23 +176,28 @@ export class AssetLoader {
         // 非表示にしておく
         mesh.setEnabled(false);
         
-        // スケーリングを設定
-        mesh.scaling = new BABYLON.Vector3(scale.x, scale.y, scale.z);
+        // スケーリングを設定（安全なチェック）
+        if (scale && typeof scale === 'object' && 'x' in scale && 'y' in scale && 'z' in scale) {
+            mesh.scaling = new BABYLON.Vector3(scale.x, scale.y, scale.z);
+        } else {
+            console.warn("Invalid scale provided, using default");
+            mesh.scaling = new BABYLON.Vector3(0.3, 0.3, 0.3);
+        }
         
         return mesh;
     }
 
     /**
-     * メッシュのプロパティを設定
+     * メッシュプロパティを設定
      * @param {BABYLON.Mesh} rootMesh - ルートメッシュ
      */
     setupMeshProperties(rootMesh) {
-        // レンダリング設定を調整
+        // ルートメッシュの設定
         rootMesh.renderingGroupId = 0;
         rootMesh.alwaysSelectAsActiveMesh = true;
         rootMesh.cullingStrategy = BABYLON.AbstractMesh.CULLINGSTRATEGY_OPTIMISTIC_INCLUSION;
         
-        // 子メッシュもすべて設定
+        // 子メッシュも設定
         rootMesh.getChildMeshes().forEach(childMesh => {
             childMesh.renderingGroupId = 0;
             childMesh.alwaysSelectAsActiveMesh = true;
@@ -203,46 +212,38 @@ export class AssetLoader {
 
     /**
      * モデルをクローン
-     * @param {string} modelType - モデルタイプ ('burger', 'record', 'juiceBox')
+     * @param {string} modelType - モデルタイプ ('burger', 'recordMachine', 'juiceBox')
      * @param {string} name - 新しい名前
      * @returns {BABYLON.Mesh|null} クローンされたメッシュ
      */
     cloneModel(modelType, name) {
-        const originalModel = this.preloadedModels[modelType];
+        if (!this.isModelAvailable(modelType)) {
+            console.warn(`Model ${modelType} not available for cloning`);
+            return null;
+        }
         
+        const originalModel = this.preloadedModels[modelType];
         if (!originalModel) {
-            console.error(`Model ${modelType} not preloaded`);
+            console.error(`Unexpected error: Model ${modelType} is marked as available but not found`);
             return null;
         }
         
         try {
-            // クローン前にオリジナルモデルが正しく存在するか確認
-            if (!originalModel._scene) {
-                console.error(`Original model ${modelType} is not in scene`);
-                return null;
-            }
-            
-            // clone()メソッドは子メッシュも自動的にクローンする
+            // clone()メソッドは子メッシュも自動的にクローンするため、
+            // 手動での子メッシュクローンは不要
             const clonedModel = originalModel.clone(name);
-            
             if (!clonedModel) {
-                console.error(`Failed to clone model ${modelType}`);
-                return null;
+                throw new Error(`Failed to clone model ${modelType}`);
             }
             
-            // クローンを有効化
             clonedModel.setEnabled(true);
             
             // クローンされた子メッシュも有効化
-            const childMeshes = clonedModel.getChildMeshes();
-            childMeshes.forEach(childMesh => {
+            clonedModel.getChildMeshes().forEach(childMesh => {
                 childMesh.setEnabled(true);
             });
             
-            console.log(`Successfully cloned ${modelType} as ${name} with ${childMeshes.length} child meshes`);
-            
             return clonedModel;
-            
         } catch (error) {
             console.error(`Error cloning model ${modelType}:`, error);
             return null;
@@ -287,7 +288,7 @@ export class AssetLoader {
                 null,
                 (scene, message) => {
                     placeholder.dispose();
-                    reject(new Error("Failed to load asset: " + message));
+                    reject(new Error(`Failed to load asset: ${message}`));
                 }
             );
         });
@@ -295,22 +296,20 @@ export class AssetLoader {
 
     /**
      * プレースホルダーを作成
-     * @param {string} name - メッシュ名
-     * @returns {BABYLON.Mesh} プレースホルダー
+     * @param {string} name - 名前
+     * @returns {BABYLON.Mesh} プレースホルダーメッシュ
      */
     createPlaceholder(name) {
         const placeholder = BABYLON.MeshBuilder.CreateBox(
             `placeholder_${name}`, 
-            { size: 0.1 }, 
+            { size: 0.2 }, 
             this.scene
         );
         
-        const material = new BABYLON.StandardMaterial(`placeholderMat_${name}`, this.scene);
-        material.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+        const material = new BABYLON.StandardMaterial("placeholderMat", this.scene);
+        material.diffuseColor = new BABYLON.Color3(0.5, 0.5, 1);
         material.alpha = 0.5;
         placeholder.material = material;
-        placeholder.isPickable = false;
-        placeholder.visibility = 0.3;
         
         return placeholder;
     }
@@ -321,48 +320,42 @@ export class AssetLoader {
      * @param {string} name - メッシュ名
      */
     applyDefaultScale(mesh, name) {
-        if (name.includes("burger")) {
-            mesh.scaling = new BABYLON.Vector3(
-                MODEL_SCALES.BURGER.x, 
-                MODEL_SCALES.BURGER.y, 
-                MODEL_SCALES.BURGER.z
-            );
-        } else if (name.includes("record")) {
-            mesh.scaling = new BABYLON.Vector3(
-                MODEL_SCALES.RECORD.x, 
-                MODEL_SCALES.RECORD.y, 
-                MODEL_SCALES.RECORD.z
-            );
-        } else if (name.includes("juiceBox")) {
-            mesh.scaling = new BABYLON.Vector3(
-                MODEL_SCALES.JUICE_BOX.x, 
-                MODEL_SCALES.JUICE_BOX.y, 
-                MODEL_SCALES.JUICE_BOX.z
-            );
+        let scale = MODEL_SCALES.DEFAULT || { x: 0.1, y: 0.1, z: 0.1 };
+        
+        if (name.includes("juiceBox")) {
+            scale = MODEL_SCALES.JUICE_BOX || { x: 0.15, y: 0.15, z: 0.15 };
+        } else if (name.includes("mikeDesk")) {
+            scale = MODEL_SCALES.DEFAULT || { x: 1, y: 1, z: 1 };
+        } else if (name.includes("recordMachine")) {
+            scale = MODEL_SCALES.RECORD_MACHINE || { x: 0.3, y: 0.3, z: 0.3 };
+        } else if (name.includes("burger") || name.includes("cube")) {
+            scale = MODEL_SCALES.BURGER || { x: 0.5, y: 0.5, z: 0.5 };
         }
+        
+        mesh.scaling = new BABYLON.Vector3(scale.x, scale.y, scale.z);
     }
 
     /**
-     * 動的にロードしたメッシュのプロパティを設定
-     * @param {BABYLON.Mesh} mesh - メッシュ
+     * 動的メッシュのプロパティを設定
+     * @param {BABYLON.Mesh} rootMesh - ルートメッシュ
      */
-    setupDynamicMeshProperties(mesh) {
-        mesh.isPickable = true;
-        mesh.receiveShadows = true;
-        mesh.renderingGroupId = 0;
+    setupDynamicMeshProperties(rootMesh) {
+        // すべてのメッシュを設定
+        const allMeshes = [rootMesh, ...rootMesh.getChildMeshes()];
         
-        mesh.getChildMeshes().forEach(childMesh => {
-            childMesh.renderingGroupId = 0;
-            childMesh.receiveShadows = true;
-            childMesh.isPickable = true;
-            childMesh.alwaysSelectAsActiveMesh = true;
-            childMesh.cullingStrategy = BABYLON.AbstractMesh.CULLINGSTRATEGY_OPTIMISTIC_INCLUSION;
+        allMeshes.forEach(mesh => {
+            mesh.isVisible = true;
+            mesh.isPickable = true;
+            mesh.receiveShadows = true;
+            mesh.renderingGroupId = 0;
+            mesh.alwaysSelectAsActiveMesh = true;
+            mesh.cullingStrategy = BABYLON.AbstractMesh.CULLINGSTRATEGY_OPTIMISTIC_INCLUSION;
             
-            if (childMesh.material) {
-                childMesh.material.backFaceCulling = false;
-                childMesh.material.needDepthPrePass = true;
-                childMesh.material.zOffset = 1;
-                childMesh.material.forceDepthWrite = true;
+            if (mesh.material) {
+                mesh.material.backFaceCulling = false;
+                mesh.material.needDepthPrePass = true;
+                mesh.material.zOffset = 1;
+                mesh.material.forceDepthWrite = true;
             }
         });
     }
@@ -403,7 +396,7 @@ export class AssetLoader {
     getLoadingStatus() {
         return {
             burger: this.isModelAvailable('burger'),
-            record: this.isModelAvailable('record'),
+            recordMachine: this.isModelAvailable('recordMachine'),
             juiceBox: this.isModelAvailable('juiceBox'),
             isLoading: Object.values(this.loadingStatus).some(status => status)
         };
@@ -417,20 +410,20 @@ export class AssetLoader {
         
         // プリロードしたモデルを破棄
         Object.values(this.preloadedModels).forEach(model => {
-            if (model && model._scene) {
+            if (model && !model.isDisposed()) {
                 model.dispose();
             }
         });
         
         this.preloadedModels = {
             burger: null,
-            record: null,
+            recordMachine: null,
             juiceBox: null
         };
         
         this.loadingStatus = {
             burger: false,
-            record: false,
+            recordMachine: false,
             juiceBox: false
         };
         

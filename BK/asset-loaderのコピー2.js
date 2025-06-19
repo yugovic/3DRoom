@@ -211,42 +211,21 @@ export class AssetLoader {
         const originalModel = this.preloadedModels[modelType];
         
         if (!originalModel) {
-            console.error(`Model ${modelType} not preloaded`);
+            console.warn(`Model ${modelType} not preloaded`);
             return null;
         }
         
-        try {
-            // クローン前にオリジナルモデルが正しく存在するか確認
-            if (!originalModel._scene) {
-                console.error(`Original model ${modelType} is not in scene`);
-                return null;
-            }
-            
-            // clone()メソッドは子メッシュも自動的にクローンする
-            const clonedModel = originalModel.clone(name);
-            
-            if (!clonedModel) {
-                console.error(`Failed to clone model ${modelType}`);
-                return null;
-            }
-            
-            // クローンを有効化
-            clonedModel.setEnabled(true);
-            
-            // クローンされた子メッシュも有効化
-            const childMeshes = clonedModel.getChildMeshes();
-            childMeshes.forEach(childMesh => {
-                childMesh.setEnabled(true);
-            });
-            
-            console.log(`Successfully cloned ${modelType} as ${name} with ${childMeshes.length} child meshes`);
-            
-            return clonedModel;
-            
-        } catch (error) {
-            console.error(`Error cloning model ${modelType}:`, error);
-            return null;
-        }
+        // clone()メソッドは子メッシュも自動的にクローンするため、
+        // 手動での子メッシュクローンは不要
+        const clonedModel = originalModel.clone(name);
+        clonedModel.setEnabled(true);
+        
+        // クローンされた子メッシュも有効化
+        clonedModel.getChildMeshes().forEach(childMesh => {
+            childMesh.setEnabled(true);
+        });
+        
+        return clonedModel;
     }
 
     /**
@@ -287,7 +266,7 @@ export class AssetLoader {
                 null,
                 (scene, message) => {
                     placeholder.dispose();
-                    reject(new Error("Failed to load asset: " + message));
+                    reject(new Error(`Failed to load asset: ${message}`));
                 }
             );
         });
@@ -295,22 +274,20 @@ export class AssetLoader {
 
     /**
      * プレースホルダーを作成
-     * @param {string} name - メッシュ名
-     * @returns {BABYLON.Mesh} プレースホルダー
+     * @param {string} name - 名前
+     * @returns {BABYLON.Mesh} プレースホルダーメッシュ
      */
     createPlaceholder(name) {
         const placeholder = BABYLON.MeshBuilder.CreateBox(
             `placeholder_${name}`, 
-            { size: 0.1 }, 
+            { size: 0.2 }, 
             this.scene
         );
         
-        const material = new BABYLON.StandardMaterial(`placeholderMat_${name}`, this.scene);
-        material.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+        const material = new BABYLON.StandardMaterial("placeholderMat", this.scene);
+        material.diffuseColor = new BABYLON.Color3(0.5, 0.5, 1);
         material.alpha = 0.5;
         placeholder.material = material;
-        placeholder.isPickable = false;
-        placeholder.visibility = 0.3;
         
         return placeholder;
     }
@@ -321,48 +298,42 @@ export class AssetLoader {
      * @param {string} name - メッシュ名
      */
     applyDefaultScale(mesh, name) {
-        if (name.includes("burger")) {
-            mesh.scaling = new BABYLON.Vector3(
-                MODEL_SCALES.BURGER.x, 
-                MODEL_SCALES.BURGER.y, 
-                MODEL_SCALES.BURGER.z
-            );
+        let scale = { x: 0.1, y: 0.1, z: 0.1 };
+        
+        if (name.includes("juiceBox")) {
+            scale = MODEL_SCALES.JUICE_BOX;
+        } else if (name.includes("mikeDesk")) {
+            scale = MODEL_SCALES.MIKE_DESK;
         } else if (name.includes("record")) {
-            mesh.scaling = new BABYLON.Vector3(
-                MODEL_SCALES.RECORD.x, 
-                MODEL_SCALES.RECORD.y, 
-                MODEL_SCALES.RECORD.z
-            );
-        } else if (name.includes("juiceBox")) {
-            mesh.scaling = new BABYLON.Vector3(
-                MODEL_SCALES.JUICE_BOX.x, 
-                MODEL_SCALES.JUICE_BOX.y, 
-                MODEL_SCALES.JUICE_BOX.z
-            );
+            scale = MODEL_SCALES.RECORD;
+        } else if (name.includes("burger")) {
+            scale = MODEL_SCALES.BURGER;
         }
+        
+        mesh.scaling = new BABYLON.Vector3(scale.x, scale.y, scale.z);
     }
 
     /**
-     * 動的にロードしたメッシュのプロパティを設定
-     * @param {BABYLON.Mesh} mesh - メッシュ
+     * 動的メッシュのプロパティを設定
+     * @param {BABYLON.Mesh} rootMesh - ルートメッシュ
      */
-    setupDynamicMeshProperties(mesh) {
-        mesh.isPickable = true;
-        mesh.receiveShadows = true;
-        mesh.renderingGroupId = 0;
+    setupDynamicMeshProperties(rootMesh) {
+        // すべてのメッシュを設定
+        const allMeshes = [rootMesh, ...rootMesh.getChildMeshes()];
         
-        mesh.getChildMeshes().forEach(childMesh => {
-            childMesh.renderingGroupId = 0;
-            childMesh.receiveShadows = true;
-            childMesh.isPickable = true;
-            childMesh.alwaysSelectAsActiveMesh = true;
-            childMesh.cullingStrategy = BABYLON.AbstractMesh.CULLINGSTRATEGY_OPTIMISTIC_INCLUSION;
+        allMeshes.forEach(mesh => {
+            mesh.isVisible = true;
+            mesh.isPickable = true;
+            mesh.receiveShadows = true;
+            mesh.renderingGroupId = 0;
+            mesh.alwaysSelectAsActiveMesh = true;
+            mesh.cullingStrategy = BABYLON.AbstractMesh.CULLINGSTRATEGY_OPTIMISTIC_INCLUSION;
             
-            if (childMesh.material) {
-                childMesh.material.backFaceCulling = false;
-                childMesh.material.needDepthPrePass = true;
-                childMesh.material.zOffset = 1;
-                childMesh.material.forceDepthWrite = true;
+            if (mesh.material) {
+                mesh.material.backFaceCulling = false;
+                mesh.material.needDepthPrePass = true;
+                mesh.material.zOffset = 1;
+                mesh.material.forceDepthWrite = true;
             }
         });
     }
@@ -417,7 +388,7 @@ export class AssetLoader {
         
         // プリロードしたモデルを破棄
         Object.values(this.preloadedModels).forEach(model => {
-            if (model && model._scene) {
+            if (model && !model.isDisposed()) {
                 model.dispose();
             }
         });
